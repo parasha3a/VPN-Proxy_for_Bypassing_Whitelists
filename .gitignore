@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+users/*
+!users/.gitkeep
+data/generated/*
+!data/generated/.gitkeep

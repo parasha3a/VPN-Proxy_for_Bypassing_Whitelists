@@ -1,0 +1,26 @@
+{
+  "api": {
+    "tag": "api",
+    "listen": "__XRAY_API_LISTEN__",
+    "services": ["HandlerService", "LoggerService", "StatsService", "ReflectionService"]
+  },
+  "inbounds": [
+    {
+      "tag": "vless-reality-tcp",
+      "port": __XRAY_PORT_REALITY__,
+      "protocol": "vless",
+      "settings": { "clients": __REALITY_CLIENTS__, "decryption": "none" },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "target": "__XRAY_REALITY_TARGET__",
+          "serverNames": ["__XRAY_REALITY_SNI__"],
+          "privateKey": "__XRAY_REALITY_PRIVATE_KEY__",
+          "shortIds": ["__XRAY_REALITY_SHORT_ID__"]
+        }
+      }
+    }
+  ],
+  "outbounds": [{ "protocol": "freedom", "tag": "direct" }]
+}

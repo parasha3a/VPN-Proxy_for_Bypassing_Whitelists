@@ -1,0 +1,9 @@
+{
+  "inbounds": [
+    { "tag": "socks-in", "listen": "127.0.0.1", "port": 10808, "protocol": "socks", "settings": { "udp": true } }
+  ],
+  "outbounds": __OUTBOUNDS__,
+  "routing": {
+    "rules": [{ "type": "field", "network": "tcp,udp", "outboundTag": "vless-reality-tcp" }]
+  }
+}

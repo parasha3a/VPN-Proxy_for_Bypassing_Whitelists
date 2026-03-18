@@ -1,0 +1,7 @@
+{
+  "inbounds": [
+    { "type": "mixed", "tag": "mixed-in", "listen": "127.0.0.1", "listen_port": 2080 }
+  ],
+  "outbounds": __OUTBOUNDS__,
+  "route": { "auto_detect_interface": true, "final": "select" }
+}
