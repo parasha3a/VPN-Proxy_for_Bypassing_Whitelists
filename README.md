@@ -32,9 +32,10 @@ vpn status
 | File | Description |
 |---|---|
 | Subscription URL | `http://SERVER:8000/sub/<name>` — one link imports everything |
-| `uris.txt` | VLESS Reality TCP, VLESS Reality XHTTP, VLESS WS, VLESS gRPC, VMess WS |
+| `uris.txt` | VLESS Reality TCP, VLESS Reality XHTTP, VLESS WS, VLESS gRPC, VMess WS, Hysteria2 |
 | `xray_client.json` | XRay outbound config (AmneziaVPN, v2rayN, Happ) |
 | `singbox_client.json` | Sing-Box outbound config (Karing, NekoBox, Streisand, v2RayTun) |
+| `hy2_client.yaml` | Standalone Hysteria2 client config |
 | `wg.conf` | WireGuard config |
 | `awg.conf` | AmneziaWG config |
 | `proxy.txt` | HTTP + SOCKS5 proxy credentials |
@@ -67,11 +68,12 @@ vpn status
 | 3 | VLESS + WS | 8444 | WebSocket fallback |
 | 4 | VLESS + gRPC | 8445 | gRPC fallback |
 | 5 | VMess + WS | 8446 | Legacy wide support |
-| 6 | AmneziaWG | 51820 | Obfuscated WireGuard |
-| 7 | WireGuard | 51820 | Plain fallback |
-| 8 | HTTP proxy (3proxy) | 8080 | Browser/curl |
-| 9 | SOCKS5 proxy (3proxy) | 1080 | Browser/curl |
-| 10 | MTProto (mtg v2) | 8447 | Telegram native proxy |
+| 6 | Hysteria2 | 443/UDP | QUIC/UDP fallback with salamander obfs |
+| 7 | AmneziaWG | 51820 | Obfuscated WireGuard |
+| 8 | WireGuard | 51820 | Plain fallback |
+| 9 | HTTP proxy (3proxy) | 8080 | Browser/curl |
+| 10 | SOCKS5 proxy (3proxy) | 1080 | Browser/curl |
+| 11 | MTProto (mtg v2) | 8447 | Telegram native proxy |
 
 ### CLI
 
@@ -85,7 +87,7 @@ vpn user export <name> [--zip]  # Output files or zip archive
 vpn sub                         # Subscription server status + all URLs
 vpn status                      # All services status, ports, peer counts
 vpn logs [service]              # Tail logs
-vpn update                      # Update xray-core and mtg binaries
+vpn update                      # Update xray-core, hysteria and mtg binaries
 vpn uninstall                   # Full cleanup
 ```
 
@@ -140,9 +142,10 @@ vpn status            # Статус всех сервисов
 ### Что генерируется на пользователя
 
 - **Subscription URL** `http://SERVER:8000/sub/<name>` — одна ссылка импортирует всё
-- **uris.txt** — все URI (VLESS Reality, XHTTP, WS, gRPC, VMess)
+- **uris.txt** — все URI (VLESS Reality, XHTTP, WS, gRPC, VMess, Hysteria2)
 - **xray_client.json** — для AmneziaVPN, v2rayN, Happ
 - **singbox_client.json** — для Karing, NekoBox, Streisand, v2RayTun
+- **hy2_client.yaml** — для standalone Hysteria2 / совместимых клиентов
 - **wg.conf / awg.conf** — WireGuard / AmneziaWG
 - **proxy.txt** — HTTP + SOCKS5 прокси
 - **mtproto.txt** — ссылки для Telegram
@@ -165,11 +168,12 @@ vpn status            # Статус всех сервисов
 3. VLESS + WS — WebSocket fallback
 4. VLESS + gRPC — gRPC fallback
 5. VMess + WS — legacy, широкая поддержка
-6. AmneziaWG — обфусцированный WireGuard
-7. WireGuard — обычный
-8. HTTP прокси (3proxy) — порт 8080
-9. SOCKS5 прокси (3proxy) — порт 1080
-10. MTProto (mtg v2) — порт 8447, для Telegram
+6. Hysteria2 — QUIC/UDP fallback с salamander obfs, порт 443/udp
+7. AmneziaWG — обфусцированный WireGuard
+8. WireGuard — обычный
+9. HTTP прокси (3proxy) — порт 8080
+10. SOCKS5 прокси (3proxy) — порт 1080
+11. MTProto (mtg v2) — порт 8447, для Telegram
 
 ### CLI команды
 
@@ -183,7 +187,7 @@ vpn user export <name> [--zip]  # Экспорт файлов или zip-арх�
 vpn sub                         # Статус сервера подписок
 vpn status                      # Статус всех сервисов
 vpn logs [service]              # Логи
-vpn update                      # Обновить xray-core и mtg
+vpn update                      # Обновить xray-core, hysteria и mtg
 vpn uninstall                   # Полная очистка
 ```
 
@@ -219,6 +223,7 @@ vpn uninstall                   # Полная очистка
 - **Xray-core** — [GitHub](https://github.com/XTLS/Xray-core) · [Docs](https://xtls.github.io/en/) · [Config](https://xtls.github.io/en/config/) · [REALITY](https://github.com/XTLS/REALITY) · [Examples](https://github.com/XTLS/Xray-examples) · [Installer](https://github.com/XTLS/Xray-install)
 - **sing-box** — [GitHub](https://github.com/SagerNet/sing-box) · [Docs](https://sing-box.sagernet.org) · [Config](https://sing-box.sagernet.org/configuration/)
 - **AmneziaWG** — [GitHub](https://github.com/amnezia-vpn/amnezia-wg)
+- **Hysteria2** — [GitHub](https://github.com/apernet/hysteria) · [Releases](https://github.com/apernet/hysteria/releases) · [Docs](https://v2.hysteria.network/docs/getting-started/Installation/)
 - **mtg** — [GitHub](https://github.com/9seconds/mtg) · [Releases](https://github.com/9seconds/mtg/releases)
 
 ---
@@ -234,6 +239,7 @@ vpn uninstall                   # Полная очистка
 - [ ] Subscription imports into Streisand
 - [ ] Subscription imports into NekoBox
 - [ ] VLESS Reality URI imports into Shadowrocket
+- [ ] Hysteria2 URI imports into v2rayN / v2rayNG / Karing / NekoBox
 - [ ] VLESS Reality URI imports into Happ (iOS + macOS)
 - [ ] `xray_client.json` imports into AmneziaVPN
 - [ ] `xray_client.json` imports into Happ

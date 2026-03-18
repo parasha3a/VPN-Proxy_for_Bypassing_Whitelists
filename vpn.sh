@@ -31,6 +31,7 @@ run_manager() {
 sync_after_user_change() {
   render_service_configs "$ROOT_DIR"
   sync_xray_service "$ROOT_DIR"
+  sync_hysteria_service "$ROOT_DIR"
   sync_wireguard_service "$ROOT_DIR"
   sync_amneziawg_service "$ROOT_DIR"
   sync_3proxy_service "$ROOT_DIR"
@@ -89,6 +90,7 @@ cmd_logs() {
 
 cmd_update() {
   "$ROOT_DIR/scripts/install_xray.sh" --upgrade
+  "$ROOT_DIR/scripts/install_hysteria.sh" --upgrade
   "$ROOT_DIR/scripts/install_mtproto.sh" --upgrade
 }
 

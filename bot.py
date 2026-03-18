@@ -104,6 +104,7 @@ def send_bundle(chat_id: str, name: str) -> None:
         send_photo(chat_id, base / "qr_vless.png", "VLESS Reality QR")
     send_document(chat_id, base / "xray_client.json")
     send_document(chat_id, base / "singbox_client.json")
+    send_document(chat_id, base / "hy2_client.yaml")
     send_document(chat_id, base / "awg.conf")
     send_document(chat_id, base / "wg.conf")
     send_text(chat_id, (base / "mtproto.txt").read_text().strip())

@@ -1,0 +1,25 @@
+listen: :__HY2_PORT__
+
+tls:
+  cert: __HY2_CERT_PATH__
+  key: __HY2_KEY_PATH__
+
+auth:
+  type: userpass
+  userpass:
+__HY2_USERS__
+
+obfs:
+  type: salamander
+  salamander:
+    password: __HY2_OBFS_PASSWORD__
+
+bandwidth:
+  up: __HY2_UP_MBPS__ mbps
+  down: __HY2_DOWN_MBPS__ mbps
+
+masquerade:
+  type: proxy
+  proxy:
+    url: __HY2_MASQUERADE_URL__
+    rewriteHost: true

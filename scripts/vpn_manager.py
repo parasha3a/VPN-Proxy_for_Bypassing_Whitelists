@@ -5,13 +5,11 @@ import argparse
 import base64
 import ipaddress
 import json
-import os
 import secrets
 import shutil
 import subprocess
 import sys
 import uuid
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -112,6 +110,12 @@ def encode_query_path(value: str) -> str:
     return quote(value, safe="/")
 
 
+def encode_userinfo(value: str, keep_colon: bool = False) -> str:
+    from urllib.parse import quote
+
+    return quote(value, safe=":" if keep_colon else "")
+
+
 def next_client_ips(users: dict[str, Any], env: dict[str, str]) -> tuple[str, str]:
     taken_v4: set[int] = set()
     taken_v6: set[int] = set()
@@ -150,12 +154,29 @@ def build_user_record(name: str, users: dict[str, Any], env: dict[str, str]) -> 
         "email": f"{name}@vpn.local",
         "proxy_username": name,
         "proxy_password": proxy_password,
+        "hy2_username": name,
+        "hy2_password": secrets.token_urlsafe(16),
         "wg_private_key": wg_private,
         "wg_public_key": wg_public,
         "wg_preshared_key": wg_psk,
         "wg_ipv4": wg_ipv4,
         "wg_ipv6": wg_ipv6,
     }
+
+
+def build_hy2_uri(user: dict[str, Any], env: dict[str, str]) -> str:
+    server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
+    auth = encode_userinfo(f"{user['hy2_username']}:{user['hy2_password']}", keep_colon=True)
+    label = f"{encode_uri_fragment(env.get('SERVER_NAME', 'VPN'))}-{encode_uri_fragment(user['name'])}-Hysteria2"
+    query = [
+        f"obfs=salamander",
+        f"obfs-password={encode_userinfo(env['HY2_OBFS_PASSWORD'])}",
+        f"sni={encode_userinfo(env['HY2_TLS_SNI'])}",
+        "insecure=1",
+    ]
+    if env.get("HY2_PIN_SHA256") and env["HY2_PIN_SHA256"] != "CHANGE_ME":
+        query.append(f"pinSHA256={encode_userinfo(env['HY2_PIN_SHA256'])}")
+    return f"hysteria2://{auth}@{server}:{env['HY2_PORT']}/?{'&'.join(query)}#{label}"
 
 
 def build_uris(user: dict[str, Any], env: dict[str, str]) -> list[str]:
@@ -213,7 +234,7 @@ def build_uris(user: dict[str, Any], env: dict[str, str]) -> list[str]:
         + base64.b64encode(json.dumps(vmess_payload, separators=(",", ":")).encode()).decode()
         + f"#{shared}-VMess-WS"
     )
-    return [vless_reality, vless_xhttp, vless_ws, vless_grpc, vmess]
+    return [vless_reality, vless_xhttp, vless_ws, vless_grpc, vmess, build_hy2_uri(user, env)]
 
 
 def xray_outbounds(user: dict[str, Any], env: dict[str, str]) -> list[dict[str, Any]]:
@@ -349,7 +370,7 @@ def build_xray_client(user: dict[str, Any], env: dict[str, str]) -> dict[str, An
 
 
 def singbox_proxy_tags() -> list[str]:
-    return ["vless-reality-tcp", "vless-xhttp", "vless-ws", "vless-grpc", "vmess-ws"]
+    return ["vless-reality-tcp", "vless-xhttp", "vless-ws", "vless-grpc", "vmess-ws", "hysteria2"]
 
 
 def build_singbox_client(user: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
@@ -428,6 +449,22 @@ def build_singbox_client(user: dict[str, Any], env: dict[str, str]) -> dict[str,
             "security": "auto",
             "transport": {"type": "ws", "path": env["XRAY_VMESS_WS_PATH"], "headers": {"Host": server}},
         },
+        {
+            "type": "hysteria2",
+            "tag": "hysteria2",
+            "server": server,
+            "server_port": int(env["HY2_PORT"]),
+            "up_mbps": int(env["HY2_UP_MBPS"]),
+            "down_mbps": int(env["HY2_DOWN_MBPS"]),
+            "password": f"{user['hy2_username']}:{user['hy2_password']}",
+            "obfs": {"type": "salamander", "password": env["HY2_OBFS_PASSWORD"]},
+            "tls": {
+                "enabled": True,
+                "server_name": env["HY2_TLS_SNI"],
+                "insecure": True,
+                "alpn": ["h3"],
+            },
+        },
         {"type": "direct", "tag": "direct"},
         {"type": "block", "tag": "block"},
     ]
@@ -492,6 +529,36 @@ def build_mtproto_txt(env: dict[str, str]) -> str:
     )
 
 
+def build_hy2_client(user: dict[str, Any], env: dict[str, str]) -> str:
+    server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
+    lines = [
+        f"server: {server}:{env['HY2_PORT']}",
+        f"auth: {user['hy2_username']}:{user['hy2_password']}",
+        "tls:",
+        f"  sni: {env['HY2_TLS_SNI']}",
+        "  insecure: true",
+    ]
+    if env.get("HY2_PIN_SHA256") and env["HY2_PIN_SHA256"] != "CHANGE_ME":
+        lines.append(f"  pinSHA256: {env['HY2_PIN_SHA256']}")
+    lines.extend(
+        [
+            "obfs:",
+            "  type: salamander",
+            "  salamander:",
+            f"    password: {env['HY2_OBFS_PASSWORD']}",
+            "bandwidth:",
+            f"  up: {env['HY2_UP_MBPS']} mbps",
+            f"  down: {env['HY2_DOWN_MBPS']} mbps",
+            "socks5:",
+            "  listen: 127.0.0.1:1080",
+            "http:",
+            "  listen: 127.0.0.1:1081",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def build_readme(user: dict[str, Any], env: dict[str, str], uris: list[str]) -> str:
     lines = [
         f"=== VPN Configs for: {user['name']} ===",
@@ -511,12 +578,14 @@ def build_readme(user: dict[str, Any], env: dict[str, str], uris: list[str]) -> 
         "-> Import xray_client.json  (for VLESS Reality and fallbacks)",
         "-> Import awg.conf          (for AmneziaWG)",
         "-> Import wg.conf           (for WireGuard)",
+        "Hysteria2-compatible apps:",
+        "-> Import the hysteria2:// URI from uris.txt or use hy2_client.yaml",
         "Telegram MTProto:",
         "-> Click a link from mtproto.txt or share it in chat",
         "HTTP/SOCKS5 Proxy:",
         "-> See proxy.txt",
         "",
-        "[ALL VLESS / VMESS URIS]",
+        "[ALL SHAREABLE URIS]",
         *uris,
         "",
     ]
@@ -543,6 +612,7 @@ def write_user_bundle(user: dict[str, Any], env: dict[str, str]) -> None:
     (user_dir / "subscription_url.txt").write_text(sub_url + "\n")
     (user_dir / "xray_client.json").write_text(json.dumps(build_xray_client(user, env), indent=2) + "\n")
     (user_dir / "singbox_client.json").write_text(json.dumps(build_singbox_client(user, env), indent=2) + "\n")
+    (user_dir / "hy2_client.yaml").write_text(build_hy2_client(user, env))
     (user_dir / "wg.conf").write_text(build_wg_client(user, env))
     (user_dir / "awg.conf").write_text(build_awg_client(user, env))
     (user_dir / "proxy.txt").write_text(build_proxy_txt(user, env))
@@ -709,11 +779,54 @@ def render_3proxy(users: dict[str, Any], env: dict[str, str]) -> str:
     )
 
 
+def build_hysteria_server(users: dict[str, Any], env: dict[str, str]) -> str:
+    lines = [
+        f"listen: :{env['HY2_PORT']}",
+        "",
+        "tls:",
+        f"  cert: {env['HY2_CERT_PATH']}",
+        f"  key: {env['HY2_KEY_PATH']}",
+        "",
+        "auth:",
+        "  type: userpass",
+        "  userpass:",
+    ]
+
+    if users:
+        for user in users.values():
+            lines.append(f"    {user['hy2_username']}: {user['hy2_password']}")
+    else:
+        lines.append("    vpn-placeholder: disabled")
+
+    lines.extend(
+        [
+            "",
+            "obfs:",
+            "  type: salamander",
+            "  salamander:",
+            f"    password: {env['HY2_OBFS_PASSWORD']}",
+            "",
+            "bandwidth:",
+            f"  up: {env['HY2_UP_MBPS']} mbps",
+            f"  down: {env['HY2_DOWN_MBPS']} mbps",
+            "",
+            "masquerade:",
+            "  type: proxy",
+            "  proxy:",
+            f"    url: {env['HY2_MASQUERADE_URL']}",
+            "    rewriteHost: true",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def render_services() -> None:
     env = load_env()
     users = load_db()["users"]
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     (GENERATED_DIR / "xray_server.json").write_text(json.dumps(build_xray_server(users, env), indent=2) + "\n")
+    (GENERATED_DIR / "hysteria_server.yaml").write_text(build_hysteria_server(users, env))
     (GENERATED_DIR / "wg_server.conf").write_text(build_wg_server(users, env, awg=False))
     (GENERATED_DIR / "awg_server.conf").write_text(build_wg_server(users, env, awg=True))
     (GENERATED_DIR / "3proxy.cfg").write_text(render_3proxy(users, env))
@@ -755,7 +868,7 @@ def user_list() -> None:
     print(f"{'NAME':<16} {'CREATED':<20} {'PROTOCOLS':<40} SUBSCRIPTION")
     for name, user in sorted(data.items()):
         created = user["created"].replace("T", " ")[:19]
-        protocols = "vless reality,xhttp,ws,grpc,vmess,wg,awg,proxy,mtproto"
+        protocols = "vless,xhttp,ws,grpc,vmess,hy2,wg,awg,proxy,mtproto"
         print(f"{name:<16} {created:<20} {protocols:<40} {subscription_url(env, name)}")
 
 
@@ -803,6 +916,7 @@ def status_summary() -> None:
         f"ws={env['XRAY_PORT_WS']} "
         f"grpc={env['XRAY_PORT_GRPC']} "
         f"vmess={env['XRAY_PORT_VMESS']} "
+        f"hy2={env['HY2_PORT']}/udp "
         f"http={env['HTTP_PROXY_PORT']} "
         f"socks5={env['SOCKS5_PROXY_PORT']} "
         f"sub={env['SUB_PORT']} "

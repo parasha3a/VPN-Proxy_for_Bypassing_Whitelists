@@ -88,12 +88,13 @@ main() {
 
   echo
   echo "Port customization (Enter to keep defaults):"
-  local port_reality port_xhttp port_ws port_grpc port_vmess port_http port_socks5 port_sub port_mtproto port_wg
+  local port_reality port_xhttp port_ws port_grpc port_vmess port_hy2 port_http port_socks5 port_sub port_mtproto port_wg
   port_reality="$(prompt_default "  VLESS Reality port" "443")"
   port_xhttp="$(prompt_default "  VLESS XHTTP port" "8443")"
   port_ws="$(prompt_default "  VLESS WS port" "8444")"
   port_grpc="$(prompt_default "  VLESS gRPC port" "8445")"
   port_vmess="$(prompt_default "  VMess WS port" "8446")"
+  port_hy2="$(prompt_default "  Hysteria2 UDP port" "443")"
   port_http="$(prompt_default "  HTTP proxy port" "8080")"
   port_socks5="$(prompt_default "  SOCKS5 proxy port" "1080")"
   port_sub="$(prompt_default "  Subscription server port" "8000")"
@@ -113,6 +114,8 @@ main() {
   write_env_value XRAY_PORT_WS "$port_ws"
   write_env_value XRAY_PORT_GRPC "$port_grpc"
   write_env_value XRAY_PORT_VMESS "$port_vmess"
+  write_env_value HY2_PORT "$port_hy2"
+  write_env_value HY2_TLS_SNI "$server_host"
   write_env_value HTTP_PROXY_PORT "$port_http"
   write_env_value SOCKS5_PROXY_PORT "$port_socks5"
   write_env_value SUB_PORT "$port_sub"
@@ -121,6 +124,7 @@ main() {
 
   echo
   echo "[x] Xray-core (VLESS Reality + XHTTP + WS + gRPC + VMess)"
+  echo "[x] Hysteria2"
   echo "[x] AmneziaWG"
   if [[ "$install_wg" == "Y" ]]; then echo "[x] WireGuard plain"; else echo "[ ] WireGuard plain"; fi
   echo "[x] HTTP + SOCKS5 proxy (3proxy)"
@@ -130,9 +134,10 @@ main() {
   echo
 
   apt-get update
-  apt-get install -y curl wget unzip tar ca-certificates python3 python3-venv jq qrencode uuid-runtime iproute2 iptables
+  apt-get install -y curl wget unzip tar ca-certificates python3 python3-venv jq qrencode uuid-runtime iproute2 iptables openssl
 
   "$ROOT_DIR/scripts/install_xray.sh"
+  "$ROOT_DIR/scripts/install_hysteria.sh"
   "$ROOT_DIR/scripts/install_awg.sh"
   if [[ "$install_wg" == "Y" ]]; then
     "$ROOT_DIR/scripts/install_wg.sh"

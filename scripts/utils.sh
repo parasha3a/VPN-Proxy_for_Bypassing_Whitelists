@@ -40,6 +40,16 @@ XRAY_XHTTP_PATH=/vless-xhttp
 XRAY_WS_PATH=/vless-ws
 XRAY_GRPC_SERVICE=vless-grpc
 XRAY_VMESS_WS_PATH=/vmess-ws
+HY2_PORT=443
+HY2_TLS_SNI=127.0.0.1
+HY2_OBFS_PASSWORD=CHANGE_ME
+HY2_UP_MBPS=100
+HY2_DOWN_MBPS=100
+HY2_MASQUERADE_URL=https://www.microsoft.com/
+HY2_PIN_SHA256=CHANGE_ME
+HY2_CERT_PATH=/etc/hysteria/server.crt
+HY2_KEY_PATH=/etc/hysteria/server.key
+HY2_CONFIG_PATH=/etc/hysteria/config.yaml
 HTTP_PROXY_PORT=8080
 SOCKS5_PROXY_PORT=1080
 MTPROTO_PORT=8447
@@ -103,6 +113,7 @@ print_status() {
   echo
   echo "Services:"
   print_single_service xray.service
+  print_single_service hysteria.service
   print_single_service vpn-sub.service
   print_single_service 3proxy.service
   print_single_service mtg.service
@@ -165,6 +176,21 @@ sync_3proxy_service() {
 
   if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files 3proxy.service >/dev/null 2>&1; then
     systemctl restart 3proxy.service || true
+  fi
+}
+
+sync_hysteria_service() {
+  local root="$1"
+  load_env_file "$root/data/server.env"
+  local rendered="$root/data/generated/hysteria_server.yaml"
+  [[ -f "$rendered" ]] || return 0
+
+  if [[ -n "${HY2_CONFIG_PATH:-}" && -w "$(dirname -- "$HY2_CONFIG_PATH")" ]]; then
+    copy_if_possible "$rendered" "$HY2_CONFIG_PATH"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files hysteria.service >/dev/null 2>&1; then
+    systemctl restart hysteria.service || true
   fi
 }
 
@@ -259,12 +285,13 @@ uninstall_stack() {
   [[ "$answer" =~ ^[Yy]$ ]] || exit 0
 
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl disable --now vpn-bot.service vpn-sub.service mtg.service 3proxy.service xray.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true
+    systemctl disable --now vpn-bot.service vpn-sub.service mtg.service 3proxy.service xray.service hysteria.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true
   fi
 
   rm -f /usr/local/bin/vpn
   rm -f /etc/systemd/system/vpn-sub.service
   rm -f /etc/systemd/system/vpn-bot.service
+  rm -f /etc/systemd/system/hysteria.service
   systemctl daemon-reload 2>/dev/null || true
 
   echo "Stack services removed. Project files remain in: $root"

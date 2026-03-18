@@ -1,0 +1,12 @@
+server: __SERVER__:__HY2_PORT__
+auth: __HY2_AUTH__
+tls:
+  sni: __HY2_SNI__
+  insecure: true
+obfs:
+  type: salamander
+  salamander:
+    password: __HY2_OBFS_PASSWORD__
+bandwidth:
+  up: __HY2_UP_MBPS__ mbps
+  down: __HY2_DOWN_MBPS__ mbps
