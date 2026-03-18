@@ -18,7 +18,11 @@ EOF
 }
 
 detect_public_ip() {
-  curl -fsSL https://api.ipify.org || hostname -I | awk '{print $1}'
+  curl -fsSL https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}'
+}
+
+detect_nic() {
+  ip route show default 2>/dev/null | awk '/default/ {print $5; exit}' || echo "eth0"
 }
 
 prompt_default() {
@@ -69,21 +73,51 @@ main() {
   fi
 
   banner
-  local public_ip
+  local public_ip server_nic
   public_ip="$(detect_public_ip)"
+  server_nic="$(detect_nic)"
   echo "Detected public IP: $public_ip"
+  echo "Detected NIC: $server_nic"
 
-  local server_name server_host install_wg install_bot
+  local server_name server_host nic install_wg install_bot
   server_name="$(prompt_default "Server name" "MyVPN")"
   server_host="$(prompt_default "Share host/IP" "$public_ip")"
+  nic="$(prompt_default "Network interface" "$server_nic")"
   install_wg="N"
   install_bot="N"
+
+  echo
+  echo "Port customization (Enter to keep defaults):"
+  local port_reality port_xhttp port_ws port_grpc port_vmess port_http port_socks5 port_sub port_mtproto port_wg
+  port_reality="$(prompt_default "  VLESS Reality port" "443")"
+  port_xhttp="$(prompt_default "  VLESS XHTTP port" "8443")"
+  port_ws="$(prompt_default "  VLESS WS port" "8444")"
+  port_grpc="$(prompt_default "  VLESS gRPC port" "8445")"
+  port_vmess="$(prompt_default "  VMess WS port" "8446")"
+  port_http="$(prompt_default "  HTTP proxy port" "8080")"
+  port_socks5="$(prompt_default "  SOCKS5 proxy port" "1080")"
+  port_sub="$(prompt_default "  Subscription server port" "8000")"
+  port_mtproto="$(prompt_default "  MTProto port" "8447")"
+  port_wg="$(prompt_default "  WireGuard port" "51820")"
+  echo
+
   yes_no "Install plain WireGuard too?" "n" && install_wg="Y"
   yes_no "Install Telegram bot?" "n" && install_bot="Y"
 
   write_env_value SERVER_NAME "$server_name"
   write_env_value SERVER_IP "$public_ip"
   write_env_value SERVER_HOST "$server_host"
+  write_env_value SERVER_NIC "$nic"
+  write_env_value XRAY_PORT_REALITY "$port_reality"
+  write_env_value XRAY_PORT_XHTTP "$port_xhttp"
+  write_env_value XRAY_PORT_WS "$port_ws"
+  write_env_value XRAY_PORT_GRPC "$port_grpc"
+  write_env_value XRAY_PORT_VMESS "$port_vmess"
+  write_env_value HTTP_PROXY_PORT "$port_http"
+  write_env_value SOCKS5_PROXY_PORT "$port_socks5"
+  write_env_value SUB_PORT "$port_sub"
+  write_env_value MTPROTO_PORT "$port_mtproto"
+  write_env_value WG_SERVER_PORT "$port_wg"
 
   echo
   echo "[x] Xray-core (VLESS Reality + XHTTP + WS + gRPC + VMess)"
@@ -120,7 +154,8 @@ main() {
   "$ROOT_DIR/vpn.sh" user add admin >/dev/null
 
   echo
-  echo "Install complete."
+  echo "=== Install complete ==="
+  echo
   "$ROOT_DIR/vpn.sh" status
   echo
   echo "Admin subscription:"
@@ -130,6 +165,13 @@ main() {
   echo "  Project root: $ROOT_DIR"
   echo "  Admin bundle: $ROOT_DIR/users/admin"
   echo "  Command: /usr/local/bin/vpn"
+  echo
+
+  # Display QR codes for admin user
+  if command -v qrencode >/dev/null 2>&1 && [[ -d "$ROOT_DIR/users/admin" ]]; then
+    source "$ROOT_DIR/scripts/utils.sh"
+    render_terminal_qrs "$ROOT_DIR" "admin"
+  fi
 }
 
 main "$@"

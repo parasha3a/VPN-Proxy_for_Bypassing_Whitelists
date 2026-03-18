@@ -50,6 +50,10 @@ main() {
   mkdir -p "$(dirname -- "$XRAY_CONFIG_PATH")"
   cp "$ROOT_DIR/data/generated/xray_server.json" "$XRAY_CONFIG_PATH"
 
+  if ! xray run -test -config "$XRAY_CONFIG_PATH" >/dev/null 2>&1; then
+    die "xray config validation failed — check $XRAY_CONFIG_PATH"
+  fi
+
   systemctl enable xray.service
   systemctl restart xray.service
 }
