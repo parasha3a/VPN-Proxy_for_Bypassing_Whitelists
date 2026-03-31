@@ -13,6 +13,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / "data" / "server.env"
 VPN = ROOT / "vpn.sh"
+FILE_CAPTIONS = {
+    "xray_client.json": "AmneziaVPN / v2rayN / Happ / Throne",
+    "singbox_client.json": "Streisand / Karing / NekoBox / v2RayTun",
+    "hy2_client.yaml": "Hysteria2-compatible apps",
+    "awg.conf": "AmneziaWG / AmneziaVPN",
+    "wg.conf": "WireGuard",
+    "README.txt": "Setup guide",
+}
 
 
 def load_env() -> dict[str, str]:
@@ -97,19 +105,33 @@ def send_bundle(chat_id: str, name: str) -> None:
     base = user_dir(name)
     readme = (base / "README.txt").read_text()
     uris = (base / "uris.txt").read_text()
-    send_text(chat_id, f"{(base / 'subscription_url.txt').read_text().strip()}\n\n{uris}".strip())
+    send_text(
+        chat_id,
+        (
+            f"Subscription URL:\n{(base / 'subscription_url.txt').read_text().strip()}\n\n"
+            "Files by client:\n"
+            "- xray_client.json -> AmneziaVPN / v2rayN / Happ / Throne\n"
+            "- singbox_client.json -> Streisand / Karing / NekoBox / v2RayTun\n"
+            "- hy2_client.yaml -> Hysteria2-compatible apps\n"
+            "- awg.conf -> AmneziaWG / AmneziaVPN\n"
+            "- wg.conf -> WireGuard\n"
+            "- mtproto.txt -> Telegram\n"
+            "- proxy.txt -> HTTP/SOCKS5 apps\n\n"
+            f"{uris}"
+        ).strip(),
+    )
     if (base / "qr_sub.png").exists():
         send_photo(chat_id, base / "qr_sub.png", "Subscription QR")
     if (base / "qr_vless.png").exists():
         send_photo(chat_id, base / "qr_vless.png", "VLESS Reality QR")
-    send_document(chat_id, base / "xray_client.json")
-    send_document(chat_id, base / "singbox_client.json")
-    send_document(chat_id, base / "hy2_client.yaml")
-    send_document(chat_id, base / "awg.conf")
-    send_document(chat_id, base / "wg.conf")
+    send_document(chat_id, base / "xray_client.json", FILE_CAPTIONS["xray_client.json"])
+    send_document(chat_id, base / "singbox_client.json", FILE_CAPTIONS["singbox_client.json"])
+    send_document(chat_id, base / "hy2_client.yaml", FILE_CAPTIONS["hy2_client.yaml"])
+    send_document(chat_id, base / "awg.conf", FILE_CAPTIONS["awg.conf"])
+    send_document(chat_id, base / "wg.conf", FILE_CAPTIONS["wg.conf"])
     send_text(chat_id, (base / "mtproto.txt").read_text().strip())
     send_text(chat_id, (base / "proxy.txt").read_text().strip())
-    send_document(chat_id, base / "README.txt", readme[:512])
+    send_document(chat_id, base / "README.txt", f"{FILE_CAPTIONS['README.txt']}\n\n{readme[:384]}")
 
 
 def handle_message(chat_id: str, text: str) -> None:

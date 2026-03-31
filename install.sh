@@ -64,6 +64,13 @@ path.write_text("\n".join(lines) + "\n")
 PY
 }
 
+random_token() {
+  python3 - <<'PY'
+import secrets
+print(secrets.token_hex(16))
+PY
+}
+
 main() {
   require_root
   ensure_project_layout "$ROOT_DIR"
@@ -79,12 +86,13 @@ main() {
   echo "Detected public IP: $public_ip"
   echo "Detected NIC: $server_nic"
 
-  local server_name server_host nic install_wg install_bot
+  local server_name server_host nic install_wg install_bot install_warp
   server_name="$(prompt_default "Server name" "MyVPN")"
   server_host="$(prompt_default "Share host/IP" "$public_ip")"
   nic="$(prompt_default "Network interface" "$server_nic")"
   install_wg="N"
   install_bot="N"
+  install_warp="N"
 
   echo
   echo "Port customization (Enter to keep defaults):"
@@ -103,12 +111,21 @@ main() {
   echo
 
   yes_no "Install plain WireGuard too?" "n" && install_wg="Y"
+  yes_no "Enable selective Cloudflare WARP egress for problematic domains?" "n" && install_warp="Y"
   yes_no "Install Telegram bot?" "n" && install_bot="Y"
 
   write_env_value SERVER_NAME "$server_name"
   write_env_value SERVER_IP "$public_ip"
   write_env_value SERVER_HOST "$server_host"
   write_env_value SERVER_NIC "$nic"
+  write_env_value VPN_SUB_HOST "0.0.0.0"
+  write_env_value VPN_ADMIN_HOST "127.0.0.1"
+  write_env_value VPN_ADMIN_PORT "8081"
+  write_env_value VPN_FIREWALL_ENABLE "1"
+  write_env_value VPN_FAIL2BAN_ENABLE "1"
+  write_env_value VPN_SSH_PORT "22"
+  write_env_value VPN_SSH_ALLOW_USERS "root"
+  write_env_value VPN_SSH_PASSWORD_ONLY "1"
   write_env_value XRAY_PORT_REALITY "$port_reality"
   write_env_value XRAY_PORT_XHTTP "$port_xhttp"
   write_env_value XRAY_PORT_WS "$port_ws"
@@ -121,12 +138,17 @@ main() {
   write_env_value SUB_PORT "$port_sub"
   write_env_value MTPROTO_PORT "$port_mtproto"
   write_env_value WG_SERVER_PORT "$port_wg"
+  write_env_value XRAY_WARP_ENABLE "$([[ "$install_warp" == "Y" ]] && echo 1 || echo 0)"
+  if ! grep -q '^VPN_PANEL_TOKEN=' "$ROOT_DIR/data/server.env" || grep -q '^VPN_PANEL_TOKEN=CHANGE_ME$' "$ROOT_DIR/data/server.env"; then
+    write_env_value VPN_PANEL_TOKEN "$(random_token)"
+  fi
 
   echo
   echo "[x] Xray-core (VLESS Reality + XHTTP + WS + gRPC + VMess)"
   echo "[x] Hysteria2"
   echo "[x] AmneziaWG"
   if [[ "$install_wg" == "Y" ]]; then echo "[x] WireGuard plain"; else echo "[ ] WireGuard plain"; fi
+  if [[ "$install_warp" == "Y" ]]; then echo "[x] Cloudflare WARP egress"; else echo "[ ] Cloudflare WARP egress"; fi
   echo "[x] HTTP + SOCKS5 proxy (3proxy)"
   echo "[x] MTProto (mtg)"
   echo "[x] Subscription server"
@@ -134,10 +156,14 @@ main() {
   echo
 
   apt-get update
-  apt-get install -y curl wget unzip tar ca-certificates python3 python3-venv jq qrencode uuid-runtime iproute2 iptables openssl
+  apt-get install -y curl wget unzip tar ca-certificates python3 python3-venv jq qrencode uuid-runtime iproute2 iptables openssl gnupg openssh-server ufw fail2ban
 
+  "$ROOT_DIR/scripts/install_network_tuning.sh"
   "$ROOT_DIR/scripts/install_xray.sh"
   "$ROOT_DIR/scripts/install_hysteria.sh"
+  if [[ "$install_warp" == "Y" ]]; then
+    "$ROOT_DIR/scripts/install_warp.sh"
+  fi
   "$ROOT_DIR/scripts/install_awg.sh"
   if [[ "$install_wg" == "Y" ]]; then
     "$ROOT_DIR/scripts/install_wg.sh"
@@ -157,6 +183,7 @@ main() {
 
   ln -sf "$ROOT_DIR/vpn.sh" /usr/local/bin/vpn
   "$ROOT_DIR/vpn.sh" user add admin >/dev/null
+  "$ROOT_DIR/scripts/install_security_hardening.sh"
 
   echo
   echo "=== Install complete ==="
@@ -170,6 +197,9 @@ main() {
   echo "  Project root: $ROOT_DIR"
   echo "  Admin bundle: $ROOT_DIR/users/admin"
   echo "  Command: /usr/local/bin/vpn"
+  echo "  Public subscriptions: http://${server_host}:${port_sub}/sub/<name>"
+  echo "  Admin UI tunnel: ssh -L 8081:127.0.0.1:8081 root@${server_host}"
+  echo "  Then open: http://127.0.0.1:8081/  (token in $ROOT_DIR/data/server.env -> VPN_PANEL_TOKEN)"
   echo
 
   # Display QR codes for admin user

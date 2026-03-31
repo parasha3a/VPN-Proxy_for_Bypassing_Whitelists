@@ -50,12 +50,17 @@ main() {
   if [[ "${MTPROTO_SECRET:-CHANGE_ME}" == "CHANGE_ME" ]]; then
     write_env_value MTPROTO_SECRET "$(mtg generate-secret "${MTPROTO_DOMAIN:-www.cloudflare.com}")"
   fi
+  if [[ -z "${MTPROTO_PREFER_IP:-}" ]]; then
+    write_env_value MTPROTO_PREFER_IP "prefer-ipv4"
+  fi
 
   load_env_file "$ROOT_DIR/data/server.env"
   cat >/etc/mtg.toml <<EOF
 secret = "${MTPROTO_SECRET}"
 bind-to = "0.0.0.0:${MTPROTO_PORT}"
+prefer-ip = "${MTPROTO_PREFER_IP}"
 EOF
+  chmod 600 /etc/mtg.toml
 
   cat >/etc/systemd/system/mtg.service <<'EOF'
 [Unit]

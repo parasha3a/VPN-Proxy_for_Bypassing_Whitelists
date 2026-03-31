@@ -23,7 +23,15 @@ SERVER_NAME=MyVPN
 SERVER_IP=127.0.0.1
 SERVER_HOST=127.0.0.1
 SERVER_NIC=eth0
+VPN_SUB_HOST=0.0.0.0
 SUB_PORT=8000
+VPN_ADMIN_HOST=127.0.0.1
+VPN_ADMIN_PORT=8081
+VPN_FIREWALL_ENABLE=1
+VPN_FAIL2BAN_ENABLE=1
+VPN_SSH_PORT=22
+VPN_SSH_ALLOW_USERS=root
+VPN_SSH_PASSWORD_ONLY=1
 XRAY_PORT_REALITY=443
 XRAY_PORT_XHTTP=8443
 XRAY_PORT_WS=8444
@@ -50,11 +58,15 @@ HY2_PIN_SHA256=CHANGE_ME
 HY2_CERT_PATH=/etc/hysteria/server.crt
 HY2_KEY_PATH=/etc/hysteria/server.key
 HY2_CONFIG_PATH=/etc/hysteria/config.yaml
+XRAY_WARP_ENABLE=0
+XRAY_WARP_PORT=40000
+XRAY_WARP_DOMAINS=gemini.google.com,aistudio.google.com,generativelanguage.googleapis.com
 HTTP_PROXY_PORT=8080
 SOCKS5_PROXY_PORT=1080
 MTPROTO_PORT=8447
 MTPROTO_SECRET=CHANGE_ME
 MTPROTO_DOMAIN=www.cloudflare.com
+MTPROTO_PREFER_IP=prefer-ipv4
 WG_SERVER_PORT=51820
 WG_SERVER_PRIVATE_KEY=CHANGE_ME
 WG_SERVER_PUBLIC_KEY=CHANGE_ME
@@ -76,9 +88,22 @@ XRAY_CONFIG_PATH=/usr/local/etc/xray/config.json
 THREEPROXY_CONFIG_PATH=/etc/3proxy/3proxy.cfg
 WG_SERVER_CONFIG_PATH=/etc/wireguard/wg0.conf
 AWG_SERVER_CONFIG_PATH=/etc/amnezia/awg0.conf
+VPN_PANEL_TOKEN=CHANGE_ME
 BOT_TOKEN=
 ADMIN_CHAT_ID=
 EOF
+}
+
+secure_project_permissions() {
+  local root="$1"
+  mkdir -p "$root/data/generated" "$root/users"
+  chmod 700 "$root/data" "$root/data/generated" "$root/users" 2>/dev/null || true
+  [[ -f "$root/data/server.env" ]] && chmod 600 "$root/data/server.env" 2>/dev/null || true
+  [[ -f "$root/data/users.json" ]] && chmod 600 "$root/data/users.json" 2>/dev/null || true
+  [[ -f "$root/data/usage_state.json" ]] && chmod 600 "$root/data/usage_state.json" 2>/dev/null || true
+  find "$root/data/generated" -type f -exec chmod 600 {} + 2>/dev/null || true
+  find "$root/users" -mindepth 1 -maxdepth 1 -type d -exec chmod 700 {} + 2>/dev/null || true
+  find "$root/users" -type f -exec chmod 600 {} + 2>/dev/null || true
 }
 
 load_env_file() {
@@ -281,8 +306,11 @@ download_file() {
 
 uninstall_stack() {
   local root="$1"
-  read -r -p "Remove services and generated configs? [y/N] " answer
-  [[ "$answer" =~ ^[Yy]$ ]] || exit 0
+  local confirm="${2:-}"
+  if [[ "$confirm" != "yes" ]]; then
+    read -r -p "Remove services and generated configs? [y/N] " answer
+    [[ "$answer" =~ ^[Yy]$ ]] || exit 0
+  fi
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl disable --now vpn-bot.service vpn-sub.service mtg.service 3proxy.service xray.service hysteria.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true

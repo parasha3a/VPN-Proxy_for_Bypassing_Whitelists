@@ -1,6 +1,13 @@
 __pycache__/
 *.pyc
+*.swp
+data/*.swp
+data/.*.swp
 users/*
 !users/.gitkeep
 data/generated/*
 !data/generated/.gitkeep
+# Локальные секреты и пользователи (в репозитории — только *.example)
+data/server.env
+data/users.json
+data/usage_state.json

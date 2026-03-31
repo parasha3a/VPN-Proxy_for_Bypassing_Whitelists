@@ -70,8 +70,11 @@ main() {
   ensure_project_layout "$ROOT_DIR"
   load_env_file "$ROOT_DIR/data/server.env"
 
-  download_hysteria /usr/local/bin/hysteria
-  chmod 0755 /usr/local/bin/hysteria
+  local tmp_bin
+  tmp_bin="$(mktemp)"
+  trap 'rm -f "$tmp_bin"' EXIT
+  download_hysteria "$tmp_bin"
+  install -m 0755 "$tmp_bin" /usr/local/bin/hysteria
 
   if [[ "${HY2_OBFS_PASSWORD:-CHANGE_ME}" == "CHANGE_ME" ]]; then
     write_env_value HY2_OBFS_PASSWORD "$(openssl rand -hex 16)"

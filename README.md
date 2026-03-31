@@ -1,14 +1,113 @@
-# vpn-deploy
+<div align="center">
+  <h1>🛰️ VPN / Proxy Deploy Toolkit</h1>
+  <p><strong>Self-hosted stack for bypassing DPI, whitelist blocks and regional filtering.</strong></p>
+  <p>Python control plane, Bash installer, web admin, Telegram bot, quotas, load monitoring and hardened-by-default server setup.</p>
 
-[RU](#ru) | [EN](#en)
+  <p>
+    <img src="https://img.shields.io/badge/Python-CLI-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python CLI" />
+    <img src="https://img.shields.io/badge/Bash-Installer-121011?style=for-the-badge&logo=gnubash&logoColor=white" alt="Bash installer" />
+    <img src="https://img.shields.io/badge/Linux-Ubuntu%2022.04%2B-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux" />
+    <img src="https://img.shields.io/badge/Web-Admin_Panel-0F172A?style=for-the-badge&logo=html5&logoColor=white" alt="Web admin" />
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Xray-core-REALITY%20%2B%20WS%20%2B%20gRPC-111827?style=for-the-badge" alt="Xray" />
+    <img src="https://img.shields.io/badge/Hysteria2-QUIC%20fallback-0EA5E9?style=for-the-badge" alt="Hysteria2" />
+    <img src="https://img.shields.io/badge/WireGuard-AmneziaWG-88171A?style=for-the-badge&logo=wireguard&logoColor=white" alt="WireGuard" />
+    <img src="https://img.shields.io/badge/Telegram-Bot%20%2B%20MTProto-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram" />
+  </p>
+</div>
+
+<p align="center">
+  <a href="#english">English</a> ·
+  <a href="#russian">Русский</a> ·
+  <a href="#project-structure">Structure</a> ·
+  <a href="#cli">CLI</a> ·
+  <a href="#web-admin">Web Admin</a> ·
+  <a href="#security-defaults">Security</a>
+</p>
 
 ---
 
-<a id="en"></a>
+<a id="english"></a>
 
-## EN — Lightweight Self-Hosted VPN/Proxy Toolkit
+## English
 
-No web panel, no database, no billing. Installs protocols, manages users, generates client bundles: files, URIs, QR codes, or one subscription URL.
+### What This Repository Is
+
+`vpn-deploy` is a lightweight self-hosted VPN/proxy toolkit with no external control plane, no database and no billing layer. It installs the server stack, manages users, renders client configs, exposes a web admin UI, tracks traffic usage, applies quotas and keeps the public attack surface tighter than a typical hobby VPN setup.
+
+### Why It Exists
+
+- One server, one repo, one control plane.
+- Several transport options instead of betting everything on one protocol.
+- Fast user onboarding with subscription links, JSON configs, QR codes and ZIP bundles.
+- Admin flows through both CLI and browser.
+- Security defaults are opinionated enough for real public exposure.
+
+### At a Glance
+
+| Area | What you get |
+|---|---|
+| Provisioning | `install.sh` installs Xray, Hysteria2, WireGuard, AmneziaWG, 3proxy, MTProto, sub server, bot and hardening |
+| Control plane | `vpn` CLI backed by `scripts/vpn_manager.py` |
+| Web | Built-in admin panel with user actions, quota control and server load view |
+| Access methods | VLESS Reality TCP, XHTTP, WS, gRPC, VMess WS, Hysteria2, WireGuard, AmneziaWG, HTTP/SOCKS5, MTProto |
+| Automation | JSON output for status, user info, exports, sub info, logs and quotas |
+| Security | Local-only admin UI, UFW, fail2ban, stricter permissions, systemd sandboxing |
+| Bypass extras | Optional selective WARP egress and emergency rescue feeds |
+
+### Technology Stack
+
+| Layer | Tech |
+|---|---|
+| Control plane | Python 3, `scripts/vpn_manager.py`, JSON storage |
+| Installer | Bash, systemd units, dedicated install scripts |
+| Proxy/VPN core | Xray-core, Hysteria2, WireGuard, AmneziaWG, 3proxy, mtg |
+| Interfaces | TTY panel, web admin UI, Telegram bot |
+| Templates | JSON, YAML, URI templates, QR and bundle generation |
+| Security | OpenSSH hardening, UFW, fail2ban, local bind admin mode |
+
+### Key Features
+
+- `vpn` as a single entrypoint for install, status, logs, users, quotas and exports
+- Interactive TTY panel for terminal-first operations
+- Built-in web admin for user lifecycle, config download, proxy access and quota changes
+- Per-user traffic accounting and traffic limits
+- Server load metrics in CLI and web UI
+- Legacy command compatibility for older operational scripts
+- Subscription endpoint for one-link imports into popular clients
+- Telegram bot for admin-only operational tasks
+
+<a id="project-structure"></a>
+
+### Project Structure
+
+```text
+vpn-deploy/
+├── install.sh                # Main installer
+├── vpn.sh                    # Thin wrapper -> python3 scripts/vpn_manager.py
+├── bot.py                    # Telegram admin bot
+├── sub_server.py             # Subscription server + local-only admin API/UI
+├── scripts/
+│   ├── vpn_manager.py        # Main CLI / TTY panel / JSON control plane
+│   ├── install_xray.sh
+│   ├── install_hysteria.sh
+│   ├── install_wg.sh
+│   ├── install_awg.sh
+│   ├── install_proxy.sh
+│   ├── install_mtproto.sh
+│   ├── install_sub.sh
+│   ├── install_bot.sh
+│   ├── install_warp.sh
+│   ├── install_network_tuning.sh
+│   ├── install_security_hardening.sh
+│   └── utils.sh
+├── templates/               # Client/server templates and URI templates
+├── web/                     # Admin frontend
+├── data/                    # Local runtime data, generated configs, env files
+├── users/                   # Per-user bundles and exports
+└── tests/                   # Python tests
+```
 
 ### Quick Start
 
@@ -21,106 +120,241 @@ sudo ./install.sh
 After install:
 
 ```bash
-vpn user add bob
-vpn user info bob
-vpn user export bob --zip
+vpn user add alice
+vpn user info alice
+vpn user export alice --zip
 vpn status
 ```
 
-### What It Generates Per User
+### What Gets Generated Per User
 
-| File | Description |
+| File | Purpose |
 |---|---|
-| Subscription URL | `http://SERVER:8000/sub/<name>` — one link imports everything |
-| `uris.txt` | VLESS Reality TCP, VLESS Reality XHTTP, VLESS WS, VLESS gRPC, VMess WS, Hysteria2 |
-| `xray_client.json` | XRay outbound config (AmneziaVPN, v2rayN, Happ) |
-| `singbox_client.json` | Sing-Box outbound config (Karing, NekoBox, Streisand, v2RayTun) |
-| `hy2_client.yaml` | Standalone Hysteria2 client config |
+| Subscription URL | `http://SERVER:8000/sub/<name>` imports all supported links |
+| `uris.txt` | VLESS Reality TCP, XHTTP, WS, gRPC, VMess WS, Hysteria2 |
+| `xray_client.json` | Xray outbound config for Xray-compatible clients |
+| `singbox_client.json` | sing-box config for Karing, NekoBox, Streisand, v2RayTun |
+| `hy2_client.yaml` | standalone Hysteria2 client config |
 | `wg.conf` | WireGuard config |
 | `awg.conf` | AmneziaWG config |
-| `proxy.txt` | HTTP + SOCKS5 proxy credentials |
-| `mtproto.txt` | Telegram MTProto proxy links |
-| `qr_*.png` | QR codes (subscription, VLESS, WireGuard) |
-| `README.txt` | Human-readable setup guide per user |
+| `proxy.txt` | HTTP and SOCKS5 credentials |
+| `mtproto.txt` | Telegram proxy links |
+| `qr_*.png` | QR codes for mobile import |
+| `README.txt` | Human-readable user bundle instructions |
+
+### Protocol Matrix
+
+| Protocol | Port | Role |
+|---|---|---|
+| VLESS + XTLS-Reality TCP | `443/tcp` | Primary transport |
+| VLESS + Reality XHTTP | `8443/tcp` | HTTP-shaped fallback |
+| VLESS + WS | `8444/tcp` | WebSocket fallback |
+| VLESS + gRPC | `8445/tcp` | gRPC fallback |
+| VMess + WS | `8446/tcp` | Legacy compatibility |
+| Hysteria2 | `443/udp` | QUIC/UDP fallback |
+| AmneziaWG | `51820/udp` | Obfuscated WireGuard |
+| WireGuard | `51820/udp` | Plain WireGuard fallback |
+| HTTP proxy | `8080/tcp` | Browser and curl |
+| SOCKS5 proxy | `1080/tcp` | Browser and curl |
+| MTProto | `8447/tcp` | Telegram native proxy |
 
 ### Supported Clients
 
-| Client | Platform | Sub URL | URI | JSON | Notes |
+| Client | Platform | Subscription | URI | File Import | Notes |
 |---|---|:---:|:---:|:---:|---|
-| **v2rayN** | Win/Linux/macOS | ✅ | ✅ | Xray | Primary desktop |
-| **Throne** | Win/Linux/macOS | ✅ | ✅ | Xray/SB | Nekoray successor |
-| **Karing** | Win/Linux/macOS/iOS | ✅ | ✅ | Sing-Box | |
-| **AmneziaVPN** | Win/Linux/macOS/iOS/Android | — | ✅ | Xray/WG/AWG | File import |
-| **Happ** | macOS/iOS/tvOS | ✅ | ✅ | Xray | `vless://`, `vmess://`, JSON |
-| **Streisand** | iOS | ✅ | ✅ | Sing-Box | Primary iOS |
-| **Shadowrocket** | iOS | ✅ | ✅ | — | VLESS Reality URI |
-| **V2Box** | iOS/Android | ✅ | ✅ | — | |
-| **v2RayTun** | iOS/Android | ✅ | ✅ | Sing-Box | |
-| **v2rayNG** | Android | ✅ | ✅ | — | Primary Android |
-| **NekoBox** | Android | ✅ | ✅ | Sing-Box | |
+| v2rayN | Win/Linux/macOS | ✅ | ✅ | Xray | Primary desktop |
+| Throne | Win/Linux/macOS | ✅ | ✅ | Xray/sing-box | Nekoray successor |
+| Karing | Win/Linux/macOS/iOS | ✅ | ✅ | sing-box | Strong multi-platform option |
+| AmneziaVPN | Win/Linux/macOS/iOS/Android | — | ✅ | Xray/WG/AWG | File-based import |
+| Happ | macOS/iOS/tvOS | ✅ | ✅ | Xray | Supports links and JSON |
+| Streisand | iOS | ✅ | ✅ | sing-box | Primary iOS option |
+| Shadowrocket | iOS | ✅ | ✅ | — | Useful for direct URI import |
+| V2Box | iOS/Android | ✅ | ✅ | — | Simple consumer client |
+| v2RayTun | iOS/Android | ✅ | ✅ | sing-box | TUN-friendly import |
+| v2rayNG | Android | ✅ | ✅ | — | Primary Android option |
+| NekoBox | Android | ✅ | ✅ | sing-box | Good advanced Android client |
 
-### Supported Protocols
-
-| # | Protocol | Port | Purpose |
-|---|---|---|---|
-| 1 | VLESS + XTLS-Reality (TCP) | 443 | Primary, best DPI bypass |
-| 2 | VLESS + Reality (XHTTP) | 8443 | HTTP-masked fallback |
-| 3 | VLESS + WS | 8444 | WebSocket fallback |
-| 4 | VLESS + gRPC | 8445 | gRPC fallback |
-| 5 | VMess + WS | 8446 | Legacy wide support |
-| 6 | Hysteria2 | 443/UDP | QUIC/UDP fallback with salamander obfs |
-| 7 | AmneziaWG | 51820 | Obfuscated WireGuard |
-| 8 | WireGuard | 51820 | Plain fallback |
-| 9 | HTTP proxy (3proxy) | 8080 | Browser/curl |
-| 10 | SOCKS5 proxy (3proxy) | 1080 | Browser/curl |
-| 11 | MTProto (mtg v2) | 8447 | Telegram native proxy |
+<a id="cli"></a>
 
 ### CLI
 
 ```bash
 vpn install                     # Interactive setup wizard
-vpn user add <name>             # Create user, generate ALL configs
-vpn user del <name>             # Revoke user from all services
-vpn user list                   # Table: name | created | protocols | sub URL
-vpn user info <name>            # Print README.txt + QR codes to terminal
-vpn user export <name> [--zip]  # Output files or zip archive
-vpn sub                         # Subscription server status + all URLs
-vpn status                      # All services status, ports, peer counts
-vpn logs [service]              # Tail logs
-vpn update                      # Update xray-core, hysteria and mtg binaries
-vpn uninstall                   # Full cleanup
+vpn user add <name>             # Create user and generate all configs
+vpn user del <name>             # Remove user from all services
+vpn user list [--json]          # Table or JSON output
+vpn user config <name>          # Paths to generated user files
+vpn user info <name> [--no-qr]  # Print README.txt and optional terminal QR
+vpn user export <name> [--zip] [--json]
+vpn user usage [name] [--json]  # Per-user traffic counters
+vpn user limit <name> (--quota-gb N | --quota-bytes N | --disable) [--json]
+vpn user suspend <name> [--json]
+vpn user resume <name> [--json]
+vpn user reset-usage <name> [--json]
+vpn sub [--json]                # Subscription server status and URLs
+vpn panel                       # TTY panel; also opens on plain `vpn` in TTY
+vpn status [--json]             # Services, ports, quotas and server load
+vpn logs [service] [--json]     # Logs
+vpn update                      # Update xray-core, hysteria and mtg
+vpn uninstall [--yes]           # Full cleanup
+vpn completion [bash|zsh]       # Shell completion snippet
 ```
+
+Python entrypoint is still available:
+
+```bash
+python3 scripts/vpn_manager.py user list --json
+python3 scripts/vpn_manager.py status --json
+python3 scripts/vpn_manager.py panel
+```
+
+Shell completion:
+
+```bash
+eval "$(vpn completion bash)"
+eval "$(vpn completion zsh)"
+```
+
+<a id="web-admin"></a>
+
+### Web Admin
+
+The public subscription endpoint remains public:
+
+```text
+http://SERVER:8000/sub/<name>
+```
+
+The admin UI is local-only by default:
+
+```text
+http://127.0.0.1:8081/
+```
+
+Access flow:
+
+1. Open an SSH tunnel:
+   ```bash
+   ssh -L 8081:127.0.0.1:8081 root@SERVER
+   ```
+2. Open `http://127.0.0.1:8081/`
+3. Authenticate with `VPN_PANEL_TOKEN` from `data/server.env`
+
+Admin UI actions:
+
+- create and delete users
+- inspect generated configs and proxy credentials
+- copy subscription URLs
+- download ZIP bundles
+- set quotas or disable them
+- suspend and resume users
+- reset traffic accounting
+- watch CPU, RAM, disk and network load
+
+Quota note:
+
+- Traffic accounting uses Xray stats, so quota enforcement is most accurate for Xray-based profiles.
 
 ### Telegram Bot
 
-Single file, runs as `vpn-bot.service`. Only responds to `ADMIN_CHAT_ID`.
+Runs as `vpn-bot.service` and only responds to `ADMIN_CHAT_ID`.
 
 | Command | Action |
 |---|---|
 | `/start` | Menu |
-| `/add <name>` | Create user, send all configs + QR + sub URL |
+| `/add <name>` | Create user and send configs |
 | `/del <name>` | Revoke user |
-| `/list` | User table |
-| `/info <name>` | Resend all configs |
-| `/status` | Services status |
-| `/logs` | Last 50 lines |
+| `/list` | Show users |
+| `/info <name>` | Resend bundle |
+| `/status` | Show services status |
+| `/logs` | Send recent logs |
 
-### Project Notes
+<a id="security-defaults"></a>
 
-- No Docker required for core flow
-- State stored in `data/users.json` and `data/server.env`
-- Shared service configs rendered into `data/generated/`
-- Subscription server returns base64 at `/sub/<name>`, plain text at `/sub/<name>/raw`
-- Xray API enabled on 127.0.0.1:10085 for future hot-reload
-- Idle RAM target: < 60 MB
+### Security Defaults
+
+- Admin UI binds to `127.0.0.1` by default and is not exposed publicly.
+- Installer runs `scripts/install_security_hardening.sh`.
+- `ufw` is configured with `default deny incoming`.
+- `fail2ban` is enabled for SSH.
+- SSH defaults to a root-only operational model.
+- X11, agent forwarding and stream forwarding are disabled.
+- Local service units get tighter systemd sandboxing.
+- Runtime data and generated bundles get stricter file permissions.
+
+If you do not want password-only root SSH, change:
+
+- `VPN_SSH_PASSWORD_ONLY`
+- `VPN_SSH_ALLOW_USERS`
+- `/etc/ssh/sshd_config.d/90-vpn-hardening.conf`
+
+### Advanced Bypass Modes
+
+- Optional selective Cloudflare WARP egress for problematic domains such as Gemini and AI Studio.
+- Curated rescue feeds and mirror links inspired by `igareck/vpn-configs-for-russia`.
+- Multiple protocol fallbacks so one broken transport does not take down the whole node.
+
+### Runtime Notes
+
+- No external database required.
+- State lives in `data/server.env`, `data/users.json` and `data/usage_state.json`.
+- Shared generated configs are rendered into `data/generated/`.
+- Subscription server returns base64 at `/sub/<name>` and plain text at `/sub/<name>/raw`.
+- Xray API is enabled on `127.0.0.1:10085` for stats and control-plane integration.
+
+### Secrets and Git Hygiene
+
+- Do not commit real `data/server.env`.
+- Do not commit real `data/users.json`.
+- Do not commit `data/usage_state.json`.
+- Use `data/server.env.example` and `data/users.json.example` as templates.
+- Keep swap files and editor junk out of git.
+- If secrets were tracked earlier:
+
+```bash
+git rm --cached data/server.env data/users.json
+```
+
+### Useful Links
+
+#### Clients
+
+- v2rayN: https://github.com/2dust/v2rayN
+- Throne: https://github.com/throneproj/Throne
+- Karing: https://github.com/KaringX/karing
+- AmneziaVPN: https://github.com/amnezia-vpn/amnezia-client
+- Happ: https://github.com/Happ-proxy
+- Streisand: https://apps.apple.com/us/app/streisand/id6450534064
+- Shadowrocket: https://apps.apple.com/us/app/shadowrocket/id932747118
+- v2rayNG: https://github.com/2dust/v2rayNG
+- NekoBox: https://github.com/MatsuriDayo/NekoBoxForAndroid
+
+#### Server Components
+
+- Xray-core: https://github.com/XTLS/Xray-core
+- sing-box docs: https://sing-box.sagernet.org
+- Hysteria2: https://github.com/apernet/hysteria
+- mtg: https://github.com/9seconds/mtg
+- WireGuard: https://www.wireguard.com
 
 ---
 
-<a id="ru"></a>
+<a id="russian"></a>
 
-## RU — Лёгкий инструмент для самостоятельного развёртывания VPN/прокси
+## Русский
 
-Без веб-панели, без базы данных, без биллинга. Устанавливает протоколы, управляет пользователями, генерирует клиентские конфиги: файлы, URI, QR-коды или одну ссылку подписки.
+### Кратко
+
+`vpn-deploy` это самодостаточный набор для развёртывания VPN и прокси на одном сервере. Он ставит стек, управляет пользователями, генерирует клиентские конфиги, отдает подписки, показывает нагрузку, умеет ограничивать трафик и дает две админские поверхности: CLI и локальную web-панель.
+
+### Что здесь есть
+
+- единая команда `vpn`
+- Python control-plane без внешней БД
+- web-админка с квотами, suspend/resume и скачиванием конфигов
+- Telegram bot для admin-only операций
+- несколько transport/fallback режимов
+- hardened-by-default установка для публичного сервера
 
 ### Быстрый старт
 
@@ -133,104 +367,94 @@ sudo ./install.sh
 После установки:
 
 ```bash
-vpn user add bob      # Создать пользователя и все конфиги
-vpn user info bob     # Показать README + QR-коды
-vpn user list         # Список всех пользователей
-vpn status            # Статус всех сервисов
+vpn user add bob
+vpn user info bob
+vpn user export bob --zip
+vpn status
 ```
 
-### Что генерируется на пользователя
-
-- **Subscription URL** `http://SERVER:8000/sub/<name>` — одна ссылка импортирует всё
-- **uris.txt** — все URI (VLESS Reality, XHTTP, WS, gRPC, VMess, Hysteria2)
-- **xray_client.json** — для AmneziaVPN, v2rayN, Happ
-- **singbox_client.json** — для Karing, NekoBox, Streisand, v2RayTun
-- **hy2_client.yaml** — для standalone Hysteria2 / совместимых клиентов
-- **wg.conf / awg.conf** — WireGuard / AmneziaWG
-- **proxy.txt** — HTTP + SOCKS5 прокси
-- **mtproto.txt** — ссылки для Telegram
-- **QR-коды** — PNG файлы для мобильного импорта
-
-### Поддерживаемые клиенты
-
-**Десктоп:** v2rayN, Throne, Karing, AmneziaVPN, Happ
-
-**iOS:** Streisand, Shadowrocket, Karing, V2Box, v2RayTun, Happ
-
-**Android:** v2rayNG, NekoBox, v2Box, v2RayTun
-
-**Telegram:** встроенный MTProto прокси
-
-### Поддерживаемые протоколы
-
-1. VLESS + XTLS-Reality (TCP) — основной, порт 443, лучший обход DPI (РКН/белые списки)
-2. VLESS + Reality (XHTTP) — fallback через HTTP
-3. VLESS + WS — WebSocket fallback
-4. VLESS + gRPC — gRPC fallback
-5. VMess + WS — legacy, широкая поддержка
-6. Hysteria2 — QUIC/UDP fallback с salamander obfs, порт 443/udp
-7. AmneziaWG — обфусцированный WireGuard
-8. WireGuard — обычный
-9. HTTP прокси (3proxy) — порт 8080
-10. SOCKS5 прокси (3proxy) — порт 1080
-11. MTProto (mtg v2) — порт 8447, для Telegram
-
-### CLI команды
+### Основные команды
 
 ```bash
-vpn install                     # Интерактивный мастер установки
-vpn user add <name>             # Создать пользователя и ВСЕ конфиги
-vpn user del <name>             # Удалить пользователя из всех сервисов
-vpn user list                   # Таблица пользователей
-vpn user info <name>            # Показать README.txt + QR-коды
-vpn user export <name> [--zip]  # Экспорт файлов или zip-архив
-vpn sub                         # Статус сервера подписок
-vpn status                      # Статус всех сервисов
-vpn logs [service]              # Логи
-vpn update                      # Обновить xray-core, hysteria и mtg
-vpn uninstall                   # Полная очистка
+vpn user add <name>
+vpn user del <name>
+vpn user list
+vpn user usage <name>
+vpn user limit <name> --quota-gb 50
+vpn user suspend <name>
+vpn user resume <name>
+vpn user reset-usage <name>
+vpn status
+vpn panel
+vpn logs
 ```
 
----
+### Структура проекта
 
-## Documentation / Документация
+```text
+install.sh        -> общий installer
+vpn.sh            -> thin wrapper для Python entrypoint
+scripts/          -> install scripts, utils, vpn_manager.py
+templates/        -> JSON/YAML/URI шаблоны
+web/              -> frontend админки
+sub_server.py     -> subscriptions + admin API/UI
+bot.py            -> Telegram bot
+data/             -> локальные runtime-данные
+users/            -> пользовательские bundle и exports
+tests/            -> тесты
+```
 
-### Desktop Clients
+### Веб-админка
 
-- **v2rayN** — [GitHub](https://github.com/2dust/v2rayN) · [Wiki](https://github.com/2dust/v2rayN/wiki) · [Releases](https://github.com/2dust/v2rayN/releases)
-- **Throne** — [GitHub](https://github.com/throneproj/Throne) · [Docs](https://throneproj.github.io/introduction/) · [Releases](https://github.com/throneproj/Throne/releases)
-- **Karing** — [GitHub](https://github.com/KaringX/karing) · [Site](https://karing.app) · [Releases](https://github.com/KaringX/karing/releases)
-- **AmneziaVPN** — [GitHub](https://github.com/amnezia-vpn/amnezia-client) · [Docs](https://docs.amnezia.org) · [Config formats](https://docs.amnezia.org/documentation/supported-configuration-formats/) · [XRay](https://docs.amnezia.org/documentation/xray/) · [AmneziaWG](https://docs.amnezia.org/documentation/how-amnezia-works/)
-- **Happ** — [GitHub](https://github.com/Happ-proxy) · [Desktop](https://github.com/Happ-proxy/happ-desktop) · [iOS](https://github.com/Happ-proxy/happ-ios) · [Android](https://github.com/Happ-proxy/happ-android) · [Docs](https://github.com/Flyfrog-LLC/Happ-docs) · [Site](https://happ.su)
+- публичная подписка: `http://SERVER:8000/sub/<name>`
+- админка по умолчанию: `http://127.0.0.1:8081/`
+- доступ через SSH tunnel:
 
-### iOS Clients
+```bash
+ssh -L 8081:127.0.0.1:8081 root@SERVER
+```
 
-- **Streisand** — [App Store](https://apps.apple.com/us/app/streisand/id6450534064)
-- **Shadowrocket** — [App Store](https://apps.apple.com/us/app/shadowrocket/id932747118) · [Wiki](https://github.com/Shadowrocket/Wiki) · [Manual](https://github.com/Shadowrocket/manual)
-- **Karing** — [App Store](https://apps.apple.com/us/app/karing/id6472431552) · [TestFlight](https://testflight.apple.com/join/RLU59OsJ)
-- **V2Box** — [App Store](https://apps.apple.com/us/app/v2box-v2ray-client/id6446814690)
-- **v2RayTun** — [App Store](https://apps.apple.com/us/app/v2raytun/id6476628951)
+В панели можно:
 
-### Android Clients
+- создавать и удалять пользователей
+- смотреть конфиги и прокси-данные
+- скачивать ZIP bundle
+- ставить лимиты трафика
+- suspend/resume пользователей
+- смотреть CPU, RAM, disk и network load
 
-- **v2rayNG** — [GitHub](https://github.com/2dust/v2rayNG) · [Wiki](https://github.com/2dust/v2rayNG/wiki) · [Google Play](https://play.google.com/store/apps/details?id=com.v2ray.ang)
-- **NekoBox** — [GitHub](https://github.com/MatsuriDayo/NekoBoxForAndroid) · [Docs](https://matsuridayo.github.io)
-- **v2Box** — [Google Play](https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box)
-- **v2RayTun** — [Google Play](https://play.google.com/store/apps/details?id=com.v2raytun.android)
+### Безопасность
 
-### Server Components
+- админка не публикуется наружу по умолчанию
+- `ufw` включается с `deny incoming`
+- `fail2ban` защищает SSH
+- сервисы запускаются с более жесткими systemd sandbox-настройками
+- чувствительные файлы в `data/` и `users/` получают более строгие права
 
-- **Xray-core** — [GitHub](https://github.com/XTLS/Xray-core) · [Docs](https://xtls.github.io/en/) · [Config](https://xtls.github.io/en/config/) · [REALITY](https://github.com/XTLS/REALITY) · [Examples](https://github.com/XTLS/Xray-examples) · [Installer](https://github.com/XTLS/Xray-install)
-- **sing-box** — [GitHub](https://github.com/SagerNet/sing-box) · [Docs](https://sing-box.sagernet.org) · [Config](https://sing-box.sagernet.org/configuration/)
-- **AmneziaWG** — [GitHub](https://github.com/amnezia-vpn/amnezia-wg)
-- **Hysteria2** — [GitHub](https://github.com/apernet/hysteria) · [Releases](https://github.com/apernet/hysteria/releases) · [Docs](https://v2.hysteria.network/docs/getting-started/Installation/)
-- **mtg** — [GitHub](https://github.com/9seconds/mtg) · [Releases](https://github.com/9seconds/mtg/releases)
+### Поддерживаемый стек
+
+- Xray-core
+- Hysteria2
+- WireGuard
+- AmneziaWG
+- 3proxy
+- MTProto
+- Telegram bot
+- selective WARP egress
+
+### Не коммитить в репозиторий
+
+- реальные `data/server.env`
+- реальные `data/users.json`
+- `data/usage_state.json`
+- любые приватные ключи, IP, пароли и боевые секреты
 
 ---
 
 ## Quality Checklist
 
-- [ ] Fresh Ubuntu 22.04: one-liner install completes without errors
+- [ ] Smoke on systemd host: `vpn install` -> `vpn status` -> `vpn user add` -> `vpn user info` -> `vpn user export --zip`
+- [ ] Fresh Ubuntu 22.04 install completes without errors
 - [ ] `vpn user add bob` generates all files in `users/bob/`
 - [ ] `curl http://IP:8000/sub/bob` returns base64
 - [ ] Subscription imports into v2rayN
@@ -239,16 +463,13 @@ vpn uninstall                   # Полная очистка
 - [ ] Subscription imports into Streisand
 - [ ] Subscription imports into NekoBox
 - [ ] VLESS Reality URI imports into Shadowrocket
-- [ ] Hysteria2 URI imports into v2rayN / v2rayNG / Karing / NekoBox
-- [ ] VLESS Reality URI imports into Happ (iOS + macOS)
-- [ ] `xray_client.json` imports into AmneziaVPN
-- [ ] `xray_client.json` imports into Happ
+- [ ] Hysteria2 URI imports into supported clients
+- [ ] `xray_client.json` imports into AmneziaVPN-compatible clients
 - [ ] `singbox_client.json` imports into Karing and NekoBox
 - [ ] `awg.conf` imports into AmneziaVPN
 - [ ] HTTP proxy works with `curl -x`
 - [ ] SOCKS5 proxy works with `curl --socks5`
 - [ ] MTProto link opens in Telegram
-- [ ] `vpn user del bob` removes access cleanly
+- [ ] `vpn user del bob` revokes access cleanly
 - [ ] Bot `/add carol` sends the expected files and QR images
-- [ ] Idle RAM stays below 60 MB
-- [ ] README.md in RU + EN with install command + app compatibility table
+- [ ] Server remains within expected idle RAM budget

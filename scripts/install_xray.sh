@@ -27,6 +27,40 @@ path.write_text("\n".join(lines) + "\n")
 PY
 }
 
+parse_x25519_keys() {
+  local output="$1"
+  python3 - "$output" <<'PY'
+import re
+import sys
+
+text = sys.argv[1]
+patterns = {
+    "private": [
+        r"private(?:\s*|-)?key\s*[:=]\s*([A-Za-z0-9+/=_-]+)",
+        r"private\s+key\s+([A-Za-z0-9+/=_-]+)",
+    ],
+    "public": [
+        r"public(?:\s*|-)?key\s*[:=]\s*([A-Za-z0-9+/=_-]+)",
+        r"public\s+key\s+([A-Za-z0-9+/=_-]+)",
+    ],
+}
+
+values = {}
+for kind, rules in patterns.items():
+    for rule in rules:
+        match = re.search(rule, text, flags=re.IGNORECASE)
+        if match:
+            values[kind] = match.group(1)
+            break
+
+if not values.get("private") or not values.get("public"):
+    raise SystemExit(1)
+
+print(values["private"])
+print(values["public"])
+PY
+}
+
 main() {
   require_root
   ensure_project_layout "$ROOT_DIR"
@@ -37,10 +71,14 @@ main() {
   fi
 
   if [[ "${XRAY_REALITY_PRIVATE_KEY:-CHANGE_ME}" == "CHANGE_ME" || "${XRAY_REALITY_PUBLIC_KEY:-CHANGE_ME}" == "CHANGE_ME" ]]; then
-    local key_output private_key public_key
+    local key_output parsed_keys private_key public_key
     key_output="$(xray x25519)"
-    private_key="$(awk -F': ' '/Private key/ {print $2}' <<<"$key_output")"
-    public_key="$(awk -F': ' '/Public key/ {print $2}' <<<"$key_output")"
+    if ! parsed_keys="$(parse_x25519_keys "$key_output")"; then
+      die "failed to parse keys from 'xray x25519' output"
+    fi
+    private_key="$(sed -n '1p' <<<"$parsed_keys")"
+    public_key="$(sed -n '2p' <<<"$parsed_keys")"
+    [[ -n "$private_key" && -n "$public_key" ]] || die "failed to parse keys from 'xray x25519' output"
     write_env_value XRAY_REALITY_PRIVATE_KEY "$private_key"
     write_env_value XRAY_REALITY_PUBLIC_KEY "$public_key"
   fi
@@ -49,6 +87,7 @@ main() {
   load_env_file "$ROOT_DIR/data/server.env"
   mkdir -p "$(dirname -- "$XRAY_CONFIG_PATH")"
   cp "$ROOT_DIR/data/generated/xray_server.json" "$XRAY_CONFIG_PATH"
+  chmod 600 "$XRAY_CONFIG_PATH"
 
   if ! xray run -test -config "$XRAY_CONFIG_PATH" >/dev/null 2>&1; then
     die "xray config validation failed — check $XRAY_CONFIG_PATH"

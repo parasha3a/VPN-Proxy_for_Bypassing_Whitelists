@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VPN Control Center</title>
+    <link rel="stylesheet" href="/assets/admin.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail">
+        <div class="brand">
+          <p class="eyebrow">Operations</p>
+          <h1>VPN Control Center</h1>
+          <p class="lede">Users, bundles, subscription links, proxy surfaces and live service state from one restrained workspace.</p>
+        </div>
+
+        <section class="rail-section">
+          <div class="section-head">
+            <h2>Live fabric</h2>
+            <button id="refreshButton" class="ghost">Refresh</button>
+          </div>
+          <div id="serviceGrid" class="service-grid"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-head">
+            <h2>Proxy surfaces</h2>
+          </div>
+          <div id="proxyPanel" class="proxy-panel"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-head">
+            <h2>Server load</h2>
+          </div>
+          <div id="loadPanel" class="load-panel"></div>
+        </section>
+
+        <section class="rail-section">
+          <div class="section-head">
+            <h2>Rescue feeds</h2>
+          </div>
+          <div id="rescueFeeds" class="rescue-feeds"></div>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <section class="toolbar">
+          <div>
+            <p class="eyebrow">Create user</p>
+            <h2>Provision access</h2>
+          </div>
+          <form id="createUserForm" class="inline-form">
+            <input id="createUserInput" name="name" autocomplete="off" placeholder="alice" required />
+            <button type="submit">Create user</button>
+          </form>
+        </section>
+
+        <section class="users-section">
+          <div class="section-head">
+            <h2>Users</h2>
+            <p id="userCount" class="muted"></p>
+          </div>
+          <div id="usersList" class="users-list"></div>
+        </section>
+      </main>
+
+      <section class="inspector">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Inspector</p>
+            <h2 id="selectedUserTitle">No user selected</h2>
+          </div>
+          <div class="actions">
+            <button id="copySubscriptionButton" class="ghost" disabled>Copy sub URL</button>
+            <button id="downloadZipButton" class="ghost" disabled>Download ZIP</button>
+            <button id="deleteUserButton" class="danger" disabled>Delete</button>
+          </div>
+        </div>
+
+        <div id="selectedUserMeta" class="meta-grid"></div>
+
+        <section class="viewer-panel">
+          <div class="section-head">
+            <h2>Traffic controls</h2>
+          </div>
+          <form id="quotaForm" class="quota-form">
+            <input id="quotaInput" type="number" min="0" step="0.1" placeholder="Quota in GB" />
+            <button type="submit">Apply quota</button>
+            <button id="disableQuotaButton" type="button" class="ghost">Unlimited</button>
+            <button id="resetUsageButton" type="button" class="ghost">Reset usage</button>
+          </form>
+          <div class="actions">
+            <button id="suspendUserButton" class="ghost" disabled>Suspend</button>
+            <button id="resumeUserButton" class="ghost" disabled>Resume</button>
+          </div>
+        </section>
+
+        <section class="viewer-panel">
+          <div class="section-head">
+            <h2>Config viewer</h2>
+            <div id="fileTabs" class="file-tabs"></div>
+          </div>
+          <pre id="configViewer" class="config-viewer">Select a user to inspect generated configs.</pre>
+        </section>
+      </section>
+    </div>
+
+    <div id="authLayer" class="auth-layer">
+      <div class="auth-panel">
+        <p class="eyebrow">Admin access</p>
+        <h2>Enter panel token</h2>
+        <p class="muted">Use <code>VPN_PANEL_TOKEN</code> from <code>data/server.env</code>. The token is kept only for the current browser session. By default the admin UI is local-only and should be opened through an SSH tunnel.</p>
+        <form id="authForm" class="auth-form">
+          <input id="tokenInput" type="password" placeholder="panel token" autocomplete="current-password" required />
+          <button type="submit">Unlock panel</button>
+        </form>
+        <p id="authError" class="auth-error"></p>
+      </div>
+    </div>
+
+    <script src="/assets/admin.js"></script>
+  </body>
+</html>
