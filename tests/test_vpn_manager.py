@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -66,6 +67,82 @@ def sample_user() -> dict[str, str]:
 
 
 class VpnManagerTests(unittest.TestCase):
+    def test_user_usage_payload_returns_mapping_when_name_omitted(self) -> None:
+        original_usage_snapshot = vpn_manager.usage_snapshot
+        vpn_manager.usage_snapshot = lambda refresh=True: {
+            "bob": {"name": "bob", "total_bytes": 40},
+            "alice": {"name": "alice", "total_bytes": 120},
+        }
+        try:
+            usage = vpn_manager.user_usage_payload(refresh=True)
+        finally:
+            vpn_manager.usage_snapshot = original_usage_snapshot
+
+        self.assertEqual(list(usage.keys()), ["alice", "bob"])
+        self.assertEqual(usage["alice"]["total_bytes"], 120)
+
+    def test_status_payload_uses_usage_mapping_for_top_usage(self) -> None:
+        original_load_db = vpn_manager.load_db
+        original_load_env = vpn_manager.load_env
+        original_user_usage_payload = vpn_manager.user_usage_payload
+        original_service_state = vpn_manager.service_state
+        original_server_load_payload = vpn_manager.server_load_payload
+        vpn_manager.load_db = lambda: {"users": {"alice": sample_user(), "bob": sample_user() | {"name": "bob"}}}
+        vpn_manager.load_env = sample_env
+        vpn_manager.user_usage_payload = lambda refresh=True: {
+            "alice": {"name": "alice", "total_bytes": 120, "state": "active", "quota_bytes": None},
+            "bob": {"name": "bob", "total_bytes": 240, "state": "active", "quota_bytes": None},
+        }
+        vpn_manager.service_state = lambda _service: "active"
+        vpn_manager.server_load_payload = lambda: {
+            "cpu": {"load1": 0.1, "load5": 0.2, "load15": 0.3},
+            "memory": {"used_bytes": 1, "total_bytes": 2, "used_percent": 50},
+            "disk": {"used_bytes": 3, "total_bytes": 4, "used_percent": 75},
+            "network": {"rx_bytes": 5, "tx_bytes": 6},
+        }
+        try:
+            payload = vpn_manager.status_payload()
+        finally:
+            vpn_manager.load_db = original_load_db
+            vpn_manager.load_env = original_load_env
+            vpn_manager.user_usage_payload = original_user_usage_payload
+            vpn_manager.service_state = original_service_state
+            vpn_manager.server_load_payload = original_server_load_payload
+
+        self.assertEqual(payload["top_usage"][0]["name"], "bob")
+        self.assertEqual(payload["users"], 2)
+
+    def test_user_info_payload_reads_usage_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            users_dir = Path(tmp)
+            user_dir = users_dir / "alice"
+            user_dir.mkdir()
+            for path in vpn_manager.bundle_file_index(user_dir).values():
+                path.write_text("sample\n", encoding="utf-8")
+            (user_dir / "uris.txt").write_text("vless://one\nvless://two\n", encoding="utf-8")
+            (user_dir / "README.txt").write_text("bundle readme\n", encoding="utf-8")
+
+            original_users_dir = vpn_manager.USERS_DIR
+            original_load_db = vpn_manager.load_db
+            original_load_env = vpn_manager.load_env
+            original_user_usage_payload = vpn_manager.user_usage_payload
+            vpn_manager.USERS_DIR = users_dir
+            vpn_manager.load_db = lambda: {"users": {"alice": sample_user()}}
+            vpn_manager.load_env = sample_env
+            vpn_manager.user_usage_payload = lambda refresh=True: {
+                "alice": {"name": "alice", "total_bytes": 512, "state": "active", "updated_at": "2026-04-01 12:00:00"},
+            }
+            try:
+                payload = vpn_manager.user_info_payload("alice")
+            finally:
+                vpn_manager.USERS_DIR = original_users_dir
+                vpn_manager.load_db = original_load_db
+                vpn_manager.load_env = original_load_env
+                vpn_manager.user_usage_payload = original_user_usage_payload
+
+        self.assertEqual(payload["usage"]["total_bytes"], 512)
+        self.assertEqual(payload["shareable_uris"], ["vless://one", "vless://two"])
+
     def test_build_singbox_client_has_dns_and_direct_rules(self) -> None:
         config = vpn_manager.build_singbox_client(sample_user(), sample_env())
 

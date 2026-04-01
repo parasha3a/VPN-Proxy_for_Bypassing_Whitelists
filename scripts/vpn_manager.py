@@ -410,7 +410,7 @@ def usage_snapshot(*, refresh: bool = True) -> dict[str, dict[str, Any]]:
 def user_usage_payload(name: str | None = None, *, refresh: bool = True) -> Any:
     usage = usage_snapshot(refresh=refresh)
     if name is None:
-        return [usage[item] for item in sorted(usage)]
+        return {item: usage[item] for item in sorted(usage)}
     safe_name = sanitize_name(name)
     if safe_name not in usage:
         raise SystemExit(f"user '{safe_name}' not found")
@@ -1766,7 +1766,7 @@ def print_user_usage(name: str | None = None) -> None:
             format_bytes(item["quota_bytes"]) if item.get("quota_bytes") else "unlimited",
             item.get("updated_at") or "n/a",
         ]
-        for item in user_usage_payload(refresh=True)
+        for item in user_usage_payload(refresh=True).values()
     ]
     if not rows:
         print("no users")

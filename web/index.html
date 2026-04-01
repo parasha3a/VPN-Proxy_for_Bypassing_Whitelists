@@ -4,107 +4,196 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VPN Control Center</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/assets/admin.css" />
   </head>
   <body>
-    <div class="shell">
-      <aside class="rail">
-        <div class="brand">
-          <p class="eyebrow">Operations</p>
-          <h1>VPN Control Center</h1>
-          <p class="lede">Users, bundles, subscription links, proxy surfaces and live service state from one restrained workspace.</p>
-        </div>
-
-        <section class="rail-section">
-          <div class="section-head">
-            <h2>Live fabric</h2>
-            <button id="refreshButton" class="ghost">Refresh</button>
-          </div>
-          <div id="serviceGrid" class="service-grid"></div>
-        </section>
-
-        <section class="rail-section">
-          <div class="section-head">
-            <h2>Proxy surfaces</h2>
-          </div>
-          <div id="proxyPanel" class="proxy-panel"></div>
-        </section>
-
-        <section class="rail-section">
-          <div class="section-head">
-            <h2>Server load</h2>
-          </div>
-          <div id="loadPanel" class="load-panel"></div>
-        </section>
-
-        <section class="rail-section">
-          <div class="section-head">
-            <h2>Rescue feeds</h2>
-          </div>
-          <div id="rescueFeeds" class="rescue-feeds"></div>
-        </section>
-      </aside>
-
-      <main class="workspace">
-        <section class="toolbar">
-          <div>
-            <p class="eyebrow">Create user</p>
-            <h2>Provision access</h2>
-          </div>
-          <form id="createUserForm" class="inline-form">
-            <input id="createUserInput" name="name" autocomplete="off" placeholder="alice" required />
-            <button type="submit">Create user</button>
-          </form>
-        </section>
-
-        <section class="users-section">
-          <div class="section-head">
-            <h2>Users</h2>
-            <p id="userCount" class="muted"></p>
-          </div>
-          <div id="usersList" class="users-list"></div>
-        </section>
-      </main>
-
-      <section class="inspector">
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Inspector</p>
-            <h2 id="selectedUserTitle">No user selected</h2>
-          </div>
-          <div class="actions">
-            <button id="copySubscriptionButton" class="ghost" disabled>Copy sub URL</button>
-            <button id="downloadZipButton" class="ghost" disabled>Download ZIP</button>
-            <button id="deleteUserButton" class="danger" disabled>Delete</button>
+    <div class="app-frame">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="navToggleButton" type="button" class="ghost nav-toggle" aria-controls="rail" aria-expanded="false">
+            Menu
+          </button>
+          <div class="topbar-brand">
+            <p class="eyebrow">Operations</p>
+            <h1>VPN Control Center</h1>
           </div>
         </div>
 
-        <div id="selectedUserMeta" class="meta-grid"></div>
+        <div class="topbar-right">
+          <p class="topbar-note muted">Local-only admin workspace with live service state, quota controls and generated client bundles.</p>
+          <button id="refreshButton" type="button" class="ghost">Refresh data</button>
+        </div>
+      </header>
 
-        <section class="viewer-panel">
-          <div class="section-head">
-            <h2>Traffic controls</h2>
-          </div>
-          <form id="quotaForm" class="quota-form">
-            <input id="quotaInput" type="number" min="0" step="0.1" placeholder="Quota in GB" />
-            <button type="submit">Apply quota</button>
-            <button id="disableQuotaButton" type="button" class="ghost">Unlimited</button>
-            <button id="resetUsageButton" type="button" class="ghost">Reset usage</button>
-          </form>
-          <div class="actions">
-            <button id="suspendUserButton" class="ghost" disabled>Suspend</button>
-            <button id="resumeUserButton" class="ghost" disabled>Resume</button>
-          </div>
-        </section>
+      <div class="shell">
+        <div id="mobileBackdrop" class="mobile-backdrop" aria-hidden="true"></div>
 
-        <section class="viewer-panel">
-          <div class="section-head">
-            <h2>Config viewer</h2>
-            <div id="fileTabs" class="file-tabs"></div>
+        <aside id="rail" class="rail" aria-label="Overview and infrastructure">
+          <section class="panel-card brand">
+            <p class="eyebrow">Workspace</p>
+            <h2>Operational view</h2>
+            <p class="lede">Users, bundles, proxies and server health from one adaptive, keyboard-friendly surface.</p>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Snapshot</p>
+                <h2>Overview</h2>
+              </div>
+            </div>
+            <div id="summaryGrid" class="summary-grid"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Live fabric</p>
+                <h2>Services</h2>
+              </div>
+            </div>
+            <div id="serviceGrid" class="service-grid"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Access</p>
+                <h2>Proxy surfaces</h2>
+              </div>
+            </div>
+            <div id="proxyPanel" class="proxy-panel"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Capacity</p>
+                <h2>Server load</h2>
+              </div>
+            </div>
+            <div id="loadPanel" class="load-panel"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Usage</p>
+                <h2>Top traffic</h2>
+              </div>
+            </div>
+            <div id="topUsagePanel" class="usage-panel"></div>
+          </section>
+
+          <section class="panel-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Fallback</p>
+                <h2>Rescue feeds</h2>
+              </div>
+            </div>
+            <div id="rescueFeeds" class="rescue-feeds"></div>
+          </section>
+        </aside>
+
+        <main class="workspace">
+          <section class="panel-card toolbar">
+            <div class="toolbar-copy">
+              <p class="eyebrow">Provisioning</p>
+              <h2>Provision access</h2>
+              <p class="muted">Create identities, watch traffic and inspect generated files without leaving the admin workspace.</p>
+            </div>
+
+            <form id="createUserForm" class="inline-form">
+              <label class="field field-grow" for="createUserInput">
+                <span class="field-label">User name</span>
+                <input id="createUserInput" name="name" autocomplete="off" placeholder="alice" required />
+              </label>
+              <button type="submit">Create user</button>
+            </form>
+          </section>
+
+          <section class="panel-card users-section">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Directory</p>
+                <h2>Users</h2>
+              </div>
+              <p id="userCount" class="muted"></p>
+            </div>
+
+            <div class="users-toolbar">
+              <label class="field field-grow" for="userSearchInput">
+                <span class="field-label">Search</span>
+                <input id="userSearchInput" type="search" placeholder="Search by name or subscription URL" autocomplete="off" />
+              </label>
+
+              <div id="userFilterTabs" class="segmented-control" role="tablist" aria-label="Filter users">
+                <button type="button" class="ghost is-active" data-filter="all" role="tab" aria-selected="true">All</button>
+                <button type="button" class="ghost" data-filter="active" role="tab" aria-selected="false">Active</button>
+                <button type="button" class="ghost" data-filter="suspended" role="tab" aria-selected="false">Suspended</button>
+              </div>
+            </div>
+
+            <div id="usersList" class="users-list"></div>
+          </section>
+        </main>
+
+        <section class="panel-card inspector" aria-label="Selected user inspector">
+          <div class="section-head inspector-head">
+            <div>
+              <p class="eyebrow">Inspector</p>
+              <h2 id="selectedUserTitle">No user selected</h2>
+            </div>
+
+            <div class="actions">
+              <button id="copySubscriptionButton" type="button" class="ghost" disabled>Copy sub URL</button>
+              <button id="downloadZipButton" type="button" class="ghost" disabled>Download ZIP</button>
+              <button id="deleteUserButton" type="button" class="danger" disabled>Delete</button>
+            </div>
           </div>
-          <pre id="configViewer" class="config-viewer">Select a user to inspect generated configs.</pre>
+
+          <div id="selectedUserMeta" class="meta-grid"></div>
+
+          <section class="viewer-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Traffic</p>
+                <h2>Quota controls</h2>
+              </div>
+            </div>
+
+            <form id="quotaForm" class="quota-form">
+              <label class="field field-grow" for="quotaInput">
+                <span class="field-label">Quota in GB</span>
+                <input id="quotaInput" type="number" min="0" step="0.1" placeholder="Quota in GB" />
+              </label>
+              <button type="submit">Apply quota</button>
+              <button id="disableQuotaButton" type="button" class="ghost">Unlimited</button>
+              <button id="resetUsageButton" type="button" class="ghost">Reset usage</button>
+            </form>
+
+            <div class="actions">
+              <button id="suspendUserButton" type="button" class="ghost" disabled>Suspend</button>
+              <button id="resumeUserButton" type="button" class="ghost" disabled>Resume</button>
+            </div>
+          </section>
+
+          <section class="viewer-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Generated files</p>
+                <h2>Config viewer</h2>
+              </div>
+              <div id="fileTabs" class="file-tabs" role="tablist" aria-label="Generated config files"></div>
+            </div>
+            <pre id="configViewer" class="config-viewer">Select a user to inspect generated configs.</pre>
+          </section>
         </section>
-      </section>
+      </div>
+
+      <div id="actionToast" class="action-toast" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <div id="authLayer" class="auth-layer">
@@ -113,6 +202,8 @@
         <h2>Enter panel token</h2>
         <p class="muted">Use <code>VPN_PANEL_TOKEN</code> from <code>data/server.env</code>. The token is kept only for the current browser session. By default the admin UI is local-only and should be opened through an SSH tunnel.</p>
         <form id="authForm" class="auth-form">
+          <label class="visually-hidden" for="authUsername">Admin username</label>
+          <input id="authUsername" type="text" autocomplete="username" class="visually-hidden" tabindex="-1" aria-hidden="true" />
           <input id="tokenInput" type="password" placeholder="panel token" autocomplete="current-password" required />
           <button type="submit">Unlock panel</button>
         </form>

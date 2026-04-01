@@ -330,7 +330,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if parts == ["api", "users"]:
                 env = vpn_manager.load_env()
-                usage = {item["name"]: item for item in vpn_manager.user_usage_payload(refresh=True)}
+                usage = vpn_manager.user_usage_payload(refresh=True)
                 items = [
                     vpn_manager.user_summary(user, env, usage.get(_name))
                     for _name, user in sorted(vpn_manager.load_db()["users"].items())
