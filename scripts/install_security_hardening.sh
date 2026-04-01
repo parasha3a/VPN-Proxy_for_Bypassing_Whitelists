@@ -107,18 +107,25 @@ configure_firewall() {
 
   local tcp_ports udp_ports
   tcp_ports=(
+    "80"
     "${XRAY_PORT_REALITY}"
+    "${XRAY_PORT_REALITY_ALT:-}"
     "${XRAY_PORT_XHTTP}"
     "${XRAY_PORT_WS}"
     "${XRAY_PORT_GRPC}"
     "${XRAY_PORT_VMESS}"
+    "${SS2022_PORT:-}"
     "${HTTP_PROXY_PORT}"
     "${SOCKS5_PROXY_PORT}"
     "${SUB_PORT}"
     "${MTPROTO_PORT}"
   )
+  if [[ -n "${XRAY_CDN_DOMAIN:-}" ]]; then
+    tcp_ports+=("443")
+  fi
   udp_ports=(
     "${HY2_PORT}"
+    "${TUIC_PORT:-}"
     "${WG_SERVER_PORT}"
   )
 
@@ -171,6 +178,42 @@ EOF
   write_service_override "hysteria.service" <<'EOF'
 [Service]
 UMask=0077
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+EOF
+
+  write_service_override "ss2022.service" <<'EOF'
+[Service]
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+EOF
+
+  write_service_override "tuic.service" <<'EOF'
+[Service]
+UMask=0077
+NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=full
@@ -263,7 +306,7 @@ EOF
   fi
 
   systemctl daemon-reload
-  systemctl restart xray.service hysteria.service 3proxy.service mtg.service vpn-sub.service >/dev/null 2>&1 || true
+  systemctl restart xray.service hysteria.service ss2022.service tuic.service 3proxy.service mtg.service vpn-sub.service >/dev/null 2>&1 || true
   systemctl restart vpn-bot.service >/dev/null 2>&1 || true
 }
 

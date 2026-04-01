@@ -30,6 +30,8 @@ USAGE_LOCK = Lock()
 SERVICES = [
     ("xray.service", "Xray"),
     ("hysteria.service", "Hysteria2"),
+    ("ss2022.service", "Shadowsocks 2022"),
+    ("tuic.service", "TUIC v5"),
     ("warp-svc.service", "Cloudflare WARP"),
     ("vpn-sub.service", "Subscription"),
     ("3proxy.service", "3proxy"),
@@ -39,12 +41,18 @@ SERVICES = [
     ("vpn-bot.service", "Telegram bot"),
 ]
 
-PROTOCOLS = "vless,reality,xhttp,ws,grpc,vmess,hy2,wg,awg,proxy,mtproto"
+PROTOCOLS = "vless,reality,reality-alt,xhttp,xhttp-cdn,ws,grpc,vmess,hy2,ss2022,tuic,wg,awg,proxy,mtproto"
+
+FINGERPRINTS = ["chrome", "firefox", "safari", "ios", "android", "edge"]
+SS2022_METHOD = "2022-blake3-aes-256-gcm"
+DEFAULT_TUIC_CONGESTION = "bbr"
 
 FILE_CLIENTS = {
     "xray": ("xray_client.json", "AmneziaVPN, v2rayN, Happ, Throne"),
     "singbox": ("singbox_client.json", "Streisand, Karing, NekoBox, v2RayTun"),
     "hy2": ("hy2_client.yaml", "Hysteria2 apps, sing-box, Happ"),
+    "ss2022": ("ss2022.txt", "sing-box, Shadowrocket, Nekoray, SS-compatible clients"),
+    "tuic": ("tuic.txt", "sing-box, Streisand, Nekoray, Mihomo-compatible apps"),
     "wg": ("wg.conf", "WireGuard"),
     "awg": ("awg.conf", "AmneziaWG, AmneziaVPN"),
     "proxy": ("proxy.txt", "HTTP/SOCKS5 apps, curl, browsers"),
@@ -129,6 +137,19 @@ def load_db() -> dict[str, Any]:
     with USERS_DB_PATH.open() as fh:
         data = json.load(fh)
     data.setdefault("users", {})
+    changed = False
+    for user in data["users"].values():
+        if not user.get("fingerprint") or user["fingerprint"] not in FINGERPRINTS:
+            user["fingerprint"] = secrets.choice(FINGERPRINTS)
+            changed = True
+        if not user.get("ss2022_password"):
+            user["ss2022_password"] = random_b64()
+            changed = True
+        if not user.get("tuic_password"):
+            user["tuic_password"] = secrets.token_urlsafe(18)
+            changed = True
+    if changed:
+        save_db(data)
     return data
 
 
@@ -441,6 +462,54 @@ def random_b64(length: int = 32) -> str:
     return base64.b64encode(secrets.token_bytes(length)).decode()
 
 
+def user_fingerprint(user: dict[str, Any], env: dict[str, str]) -> str:
+    fingerprint = str(user.get("fingerprint") or env.get("XRAY_REALITY_FINGERPRINT") or "chrome").strip().lower()
+    return fingerprint if fingerprint in FINGERPRINTS else "chrome"
+
+
+def has_cdn_domain(env: dict[str, str]) -> bool:
+    return bool(str(env.get("XRAY_CDN_DOMAIN", "")).strip())
+
+
+def primary_reality_enabled(env: dict[str, str]) -> bool:
+    return not (has_cdn_domain(env) and str(env.get("XRAY_PORT_REALITY", "")).strip() == "443")
+
+
+def reality_endpoints(env: dict[str, str]) -> list[dict[str, Any]]:
+    endpoints: list[dict[str, Any]] = []
+    if env.get("XRAY_PORT_REALITY") and primary_reality_enabled(env):
+        endpoints.append(
+            {
+                "tag": "vless-reality-tcp",
+                "port": int(env["XRAY_PORT_REALITY"]),
+                "label": "Reality",
+            }
+        )
+    alt_port = str(env.get("XRAY_PORT_REALITY_ALT", "")).strip()
+    if alt_port and alt_port != str(env.get("XRAY_PORT_REALITY", "")).strip():
+        endpoints.append(
+            {
+                "tag": "vless-reality-alt",
+                "port": int(alt_port),
+                "label": "Reality-Alt",
+            }
+        )
+    return endpoints
+
+
+def cdn_domain(env: dict[str, str]) -> str:
+    return str(env.get("XRAY_CDN_DOMAIN", "")).strip()
+
+
+def preferred_xray_outbound_tag(env: dict[str, str]) -> str:
+    if has_cdn_domain(env):
+        return "vless-xhttp-cdn"
+    endpoints = reality_endpoints(env)
+    if endpoints:
+        return endpoints[0]["tag"]
+    return "vless-xhttp"
+
+
 def run_command(
     *cmd: str,
     input_text: str | None = None,
@@ -514,6 +583,16 @@ def sync_live_configs(env: dict[str, str]) -> None:
     if hy2_dst:
         copy_if_possible(GENERATED_DIR / "hysteria_server.yaml", hy2_dst)
         restart_service_if_present("hysteria.service")
+
+    ss2022_dst = Path(env.get("SS2022_CONFIG_PATH", ""))
+    if ss2022_dst:
+        copy_if_possible(GENERATED_DIR / "ss2022_server.json", ss2022_dst)
+        restart_service_if_present("ss2022.service")
+
+    tuic_dst = Path(env.get("TUIC_CONFIG_PATH", ""))
+    if tuic_dst:
+        copy_if_possible(GENERATED_DIR / "tuic_server.json", tuic_dst)
+        restart_service_if_present("tuic.service")
 
     proxy_dst = Path(env.get("THREEPROXY_CONFIG_PATH", ""))
     if proxy_dst:
@@ -594,10 +673,13 @@ def build_user_record(name: str, users: dict[str, Any], env: dict[str, str]) -> 
         "created": now_utc(),
         "uuid": str(uuid.uuid4()),
         "email": f"{name}@vpn.local",
+        "fingerprint": secrets.choice(FINGERPRINTS),
         "proxy_username": name,
         "proxy_password": secrets.token_urlsafe(12),
         "hy2_username": name,
         "hy2_password": secrets.token_urlsafe(16),
+        "ss2022_password": random_b64(),
+        "tuic_password": secrets.token_urlsafe(18),
         "wg_private_key": wg_private,
         "wg_public_key": wg_public,
         "wg_preshared_key": wg_psk,
@@ -621,29 +703,65 @@ def build_hy2_uri(user: dict[str, Any], env: dict[str, str]) -> str:
     return f"hysteria2://{auth}@{server}:{env['HY2_PORT']}/?{'&'.join(query)}#{label}"
 
 
+def build_ss2022_uri(user: dict[str, Any], env: dict[str, str]) -> str:
+    server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
+    label = f"{encode_uri_fragment(env.get('SERVER_NAME', 'VPN'))}-{encode_uri_fragment(user['name'])}-SS2022"
+    method = encode_userinfo(SS2022_METHOD)
+    password = encode_userinfo(f"{env['SS2022_KEY']}:{user['ss2022_password']}")
+    return f"ss://{method}:{password}@{server}:{env['SS2022_PORT']}#{label}"
+
+
+def build_tuic_uri(user: dict[str, Any], env: dict[str, str]) -> str:
+    server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
+    label = f"{encode_uri_fragment(env.get('SERVER_NAME', 'VPN'))}-{encode_uri_fragment(user['name'])}-TUIC"
+    query = [
+        f"congestion_control={encode_userinfo(env.get('TUIC_CONGESTION_CONTROL', DEFAULT_TUIC_CONGESTION))}",
+        "udp_relay_mode=native",
+        "alpn=h3",
+    ]
+    sni = cdn_domain(env) or env.get("SERVER_HOST") or env.get("HY2_TLS_SNI") or server
+    if sni:
+        query.append(f"sni={encode_userinfo(sni)}")
+    return (
+        f"tuic://{encode_userinfo(user['uuid'])}:{encode_userinfo(user['tuic_password'])}"
+        f"@{server}:{env['TUIC_PORT']}?{'&'.join(query)}#{label}"
+    )
+
+
 def build_uris(user: dict[str, Any], env: dict[str, str]) -> list[str]:
     name = user["name"]
     server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
     label_prefix = encode_uri_fragment(env.get("SERVER_NAME", "VPN"))
     shared = f"{label_prefix}-{encode_uri_fragment(name)}"
+    fingerprint = user_fingerprint(user, env)
     path_xhttp = encode_query_path(env["XRAY_XHTTP_PATH"])
     path_ws = encode_query_path(env["XRAY_WS_PATH"])
     path_vmess = env["XRAY_VMESS_WS_PATH"]
-
-    vless_reality = (
-        f"vless://{user['uuid']}@{server}:{env['XRAY_PORT_REALITY']}"
-        f"?encryption=none&flow=xtls-rprx-vision&security=reality"
-        f"&sni={env['XRAY_REALITY_SNI']}&fp={env['XRAY_REALITY_FINGERPRINT']}"
-        f"&pbk={env['XRAY_REALITY_PUBLIC_KEY']}&sid={env['XRAY_REALITY_SHORT_ID']}"
-        f"&type=tcp#{shared}-Reality"
-    )
     vless_xhttp = (
         f"vless://{user['uuid']}@{server}:{env['XRAY_PORT_XHTTP']}"
         f"?encryption=none&security=reality&sni={env['XRAY_REALITY_SNI']}"
-        f"&fp={env['XRAY_REALITY_FINGERPRINT']}&pbk={env['XRAY_REALITY_PUBLIC_KEY']}"
+        f"&fp={fingerprint}&pbk={env['XRAY_REALITY_PUBLIC_KEY']}"
         f"&sid={env['XRAY_REALITY_SHORT_ID']}&type=xhttp&path={path_xhttp}"
         f"#{shared}-Reality-XHTTP"
     )
+    uris: list[str] = []
+    if has_cdn_domain(env):
+        domain = cdn_domain(env)
+        uris.append(
+            f"vless://{user['uuid']}@{domain}:443"
+            f"?encryption=none&security=tls&sni={domain}"
+            f"&fp={fingerprint}&type=xhttp&path={path_xhttp}"
+            f"#{shared}-XHTTP-CDN"
+        )
+    for endpoint in reality_endpoints(env):
+        uris.append(
+            f"vless://{user['uuid']}@{server}:{endpoint['port']}"
+            f"?encryption=none&security=reality&sni={env['XRAY_REALITY_SNI']}"
+            f"&fp={fingerprint}&pbk={env['XRAY_REALITY_PUBLIC_KEY']}"
+            f"&sid={env['XRAY_REALITY_SHORT_ID']}&type=tcp"
+            f"#{shared}-{endpoint['label']}"
+        )
+    uris.append(vless_xhttp)
     vless_ws = (
         f"vless://{user['uuid']}@{server}:{env['XRAY_PORT_WS']}"
         f"?encryption=none&security=none&type=ws&host={server}&path={path_ws}"
@@ -669,48 +787,67 @@ def build_uris(user: dict[str, Any], env: dict[str, str]) -> list[str]:
         "tls": "",
         "sni": "",
         "alpn": "",
-        "fp": env["XRAY_REALITY_FINGERPRINT"],
+        "fp": fingerprint,
     }
     vmess = (
         "vmess://"
         + base64.b64encode(json.dumps(vmess_payload, separators=(",", ":")).encode()).decode()
         + f"#{shared}-VMess-WS"
     )
-    return [vless_reality, vless_xhttp, vless_ws, vless_grpc, vmess, build_hy2_uri(user, env)]
+    uris.extend(
+        [
+            vless_ws,
+            vless_grpc,
+            vmess,
+            build_hy2_uri(user, env),
+            build_ss2022_uri(user, env),
+            build_tuic_uri(user, env),
+        ]
+    )
+    return uris
+
+
+def xray_mux_config() -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "concurrency": 8,
+        "xudpConcurrency": 16,
+        "xudpProxyUDP443": "reject",
+    }
 
 
 def xray_outbounds(user: dict[str, Any], env: dict[str, str]) -> list[dict[str, Any]]:
     server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
-    return [
-        {
-            "protocol": "vless",
-            "tag": "vless-reality-tcp",
-            "settings": {
-                "vnext": [
-                    {
-                        "address": server,
-                        "port": int(env["XRAY_PORT_REALITY"]),
-                        "users": [
-                            {
-                                "id": user["uuid"],
-                                "encryption": "none",
-                                "flow": "xtls-rprx-vision",
-                            }
-                        ],
-                    }
-                ]
-            },
-            "streamSettings": {
-                "network": "tcp",
-                "security": "reality",
-                "realitySettings": {
-                    "serverName": env["XRAY_REALITY_SNI"],
-                    "publicKey": env["XRAY_REALITY_PUBLIC_KEY"],
-                    "shortId": env["XRAY_REALITY_SHORT_ID"],
-                    "fingerprint": env["XRAY_REALITY_FINGERPRINT"],
+    fingerprint = user_fingerprint(user, env)
+    outbounds: list[dict[str, Any]] = []
+    for endpoint in reality_endpoints(env):
+        outbounds.append(
+            {
+                "protocol": "vless",
+                "tag": endpoint["tag"],
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": server,
+                            "port": endpoint["port"],
+                            "users": [{"id": user["uuid"], "encryption": "none"}],
+                        }
+                    ]
                 },
-            },
-        },
+                "streamSettings": {
+                    "network": "tcp",
+                    "security": "reality",
+                    "realitySettings": {
+                        "serverName": env["XRAY_REALITY_SNI"],
+                        "publicKey": env["XRAY_REALITY_PUBLIC_KEY"],
+                        "shortId": env["XRAY_REALITY_SHORT_ID"],
+                        "fingerprint": fingerprint,
+                    },
+                },
+                "mux": xray_mux_config(),
+            }
+        )
+    outbounds.append(
         {
             "protocol": "vless",
             "tag": "vless-xhttp",
@@ -731,11 +868,40 @@ def xray_outbounds(user: dict[str, Any], env: dict[str, str]) -> list[dict[str, 
                     "serverName": env["XRAY_REALITY_SNI"],
                     "publicKey": env["XRAY_REALITY_PUBLIC_KEY"],
                     "shortId": env["XRAY_REALITY_SHORT_ID"],
-                    "fingerprint": env["XRAY_REALITY_FINGERPRINT"],
+                    "fingerprint": fingerprint,
                 },
             },
-        },
-        {
+        }
+    )
+    if has_cdn_domain(env):
+        domain = cdn_domain(env)
+        outbounds.append(
+            {
+                "protocol": "vless",
+                "tag": "vless-xhttp-cdn",
+                "settings": {
+                    "vnext": [
+                        {
+                            "address": domain,
+                            "port": 443,
+                            "users": [{"id": user["uuid"], "encryption": "none"}],
+                        }
+                    ]
+                },
+                "streamSettings": {
+                    "network": "xhttp",
+                    "security": "tls",
+                    "xhttpSettings": {"path": env["XRAY_XHTTP_PATH"]},
+                    "tlsSettings": {
+                        "serverName": domain,
+                        "fingerprint": fingerprint,
+                    },
+                },
+            }
+        )
+    outbounds.extend(
+        [
+            {
             "protocol": "vless",
             "tag": "vless-ws",
             "settings": {
@@ -789,7 +955,9 @@ def xray_outbounds(user: dict[str, Any], env: dict[str, str]) -> list[dict[str, 
                 "wsSettings": {"path": env["XRAY_VMESS_WS_PATH"], "headers": {"Host": server}},
             },
         },
-    ]
+        ]
+    )
+    return outbounds
 
 
 def build_xray_client(user: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
@@ -806,18 +974,24 @@ def build_xray_client(user: dict[str, Any], env: dict[str, str]) -> dict[str, An
         ],
         "routing": {
             "domainStrategy": "AsIs",
-            "rules": [{"type": "field", "network": "tcp,udp", "outboundTag": "vless-reality-tcp"}],
+            "rules": [{"type": "field", "network": "tcp,udp", "outboundTag": preferred_xray_outbound_tag(env)}],
         },
     }
 
 
-def singbox_proxy_tags() -> list[str]:
-    return ["vless-reality-tcp", "vless-xhttp", "vless-ws", "vless-grpc", "vmess-ws", "hysteria2"]
+def singbox_proxy_tags(user: dict[str, Any], env: dict[str, str]) -> list[str]:
+    tags: list[str] = []
+    if has_cdn_domain(env):
+        tags.append("vless-xhttp-cdn")
+    tags.extend(endpoint["tag"] for endpoint in reality_endpoints(env))
+    tags.extend(["vless-xhttp", "tuic", "hysteria2", "ss2022", "vless-ws", "vless-grpc", "vmess-ws"])
+    return tags
 
 
 def build_singbox_client(user: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
     server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
-    fingerprint = env["XRAY_REALITY_FINGERPRINT"]
+    fingerprint = user_fingerprint(user, env)
+    proxy_tags = singbox_proxy_tags(user, env)
     reality_tls = {
         "enabled": True,
         "server_name": env["XRAY_REALITY_SNI"],
@@ -832,26 +1006,16 @@ def build_singbox_client(user: dict[str, Any], env: dict[str, str]) -> dict[str,
         {
             "type": "selector",
             "tag": "select",
-            "outbounds": ["auto", *singbox_proxy_tags(), "direct"],
+            "outbounds": ["auto", *proxy_tags, "direct"],
             "default": "auto",
         },
         {
             "type": "urltest",
             "tag": "auto",
-            "outbounds": singbox_proxy_tags(),
+            "outbounds": proxy_tags,
             "url": "https://www.gstatic.com/generate_204",
             "interval": "10m",
             "tolerance": 50,
-        },
-        {
-            "type": "vless",
-            "tag": "vless-reality-tcp",
-            "server": server,
-            "server_port": int(env["XRAY_PORT_REALITY"]),
-            "uuid": user["uuid"],
-            "flow": "xtls-rprx-vision",
-            "packet_encoding": "xudp",
-            "tls": reality_tls,
         },
         {
             "type": "vless",
@@ -866,50 +1030,112 @@ def build_singbox_client(user: dict[str, Any], env: dict[str, str]) -> dict[str,
                 "path": env["XRAY_XHTTP_PATH"],
             },
         },
-        {
-            "type": "vless",
-            "tag": "vless-ws",
-            "server": server,
-            "server_port": int(env["XRAY_PORT_WS"]),
-            "uuid": user["uuid"],
-            "transport": {"type": "ws", "path": env["XRAY_WS_PATH"], "headers": {"Host": server}},
-        },
-        {
-            "type": "vless",
-            "tag": "vless-grpc",
-            "server": server,
-            "server_port": int(env["XRAY_PORT_GRPC"]),
-            "uuid": user["uuid"],
-            "transport": {"type": "grpc", "service_name": env["XRAY_GRPC_SERVICE"]},
-        },
-        {
-            "type": "vmess",
-            "tag": "vmess-ws",
-            "server": server,
-            "server_port": int(env["XRAY_PORT_VMESS"]),
-            "uuid": user["uuid"],
-            "security": "auto",
-            "transport": {"type": "ws", "path": env["XRAY_VMESS_WS_PATH"], "headers": {"Host": server}},
-        },
-        {
-            "type": "hysteria2",
-            "tag": "hysteria2",
-            "server": server,
-            "server_port": int(env["HY2_PORT"]),
-            "up_mbps": int(env["HY2_UP_MBPS"]),
-            "down_mbps": int(env["HY2_DOWN_MBPS"]),
-            "password": f"{user['hy2_username']}:{user['hy2_password']}",
-            "obfs": {"type": "salamander", "password": env["HY2_OBFS_PASSWORD"]},
-            "tls": {
-                "enabled": True,
-                "server_name": env["HY2_TLS_SNI"],
-                "insecure": True,
-                "alpn": ["h3"],
-            },
-        },
-        {"type": "direct", "tag": "direct"},
-        {"type": "block", "tag": "block"},
     ]
+    if has_cdn_domain(env):
+        domain = cdn_domain(env)
+        outbounds.insert(
+            2,
+            {
+                "type": "vless",
+                "tag": "vless-xhttp-cdn",
+                "server": domain,
+                "server_port": 443,
+                "uuid": user["uuid"],
+                "tls": {
+                    "enabled": True,
+                    "server_name": domain,
+                    "utls": {"enabled": True, "fingerprint": fingerprint},
+                },
+                "transport": {"type": "http", "host": [domain], "path": env["XRAY_XHTTP_PATH"]},
+            },
+        )
+    for endpoint in reversed(reality_endpoints(env)):
+        outbounds.insert(
+            2,
+            {
+                "type": "vless",
+                "tag": endpoint["tag"],
+                "server": server,
+                "server_port": endpoint["port"],
+                "uuid": user["uuid"],
+                "packet_encoding": "xudp",
+                "tls": reality_tls,
+            },
+        )
+    outbounds.extend(
+        [
+            {
+                "type": "vless",
+                "tag": "vless-ws",
+                "server": server,
+                "server_port": int(env["XRAY_PORT_WS"]),
+                "uuid": user["uuid"],
+                "transport": {"type": "ws", "path": env["XRAY_WS_PATH"], "headers": {"Host": server}},
+            },
+            {
+                "type": "vless",
+                "tag": "vless-grpc",
+                "server": server,
+                "server_port": int(env["XRAY_PORT_GRPC"]),
+                "uuid": user["uuid"],
+                "transport": {"type": "grpc", "service_name": env["XRAY_GRPC_SERVICE"]},
+            },
+            {
+                "type": "vmess",
+                "tag": "vmess-ws",
+                "server": server,
+                "server_port": int(env["XRAY_PORT_VMESS"]),
+                "uuid": user["uuid"],
+                "security": "auto",
+                "transport": {"type": "ws", "path": env["XRAY_VMESS_WS_PATH"], "headers": {"Host": server}},
+            },
+            {
+                "type": "hysteria2",
+                "tag": "hysteria2",
+                "server": server,
+                "server_port": int(env["HY2_PORT"]),
+                "up_mbps": int(env["HY2_UP_MBPS"]),
+                "down_mbps": int(env["HY2_DOWN_MBPS"]),
+                "password": f"{user['hy2_username']}:{user['hy2_password']}",
+                "obfs": {"type": "salamander", "password": env["HY2_OBFS_PASSWORD"]},
+                "tls": {
+                    "enabled": True,
+                    "server_name": env["HY2_TLS_SNI"],
+                    "insecure": True,
+                    "alpn": ["h3"],
+                },
+            },
+            {
+                "type": "shadowsocks",
+                "tag": "ss2022",
+                "server": server,
+                "server_port": int(env["SS2022_PORT"]),
+                "method": SS2022_METHOD,
+                "password": f"{env['SS2022_KEY']}:{user['ss2022_password']}",
+                "multiplex": {"enabled": True, "padding": True},
+            },
+            {
+                "type": "tuic",
+                "tag": "tuic",
+                "server": server,
+                "server_port": int(env["TUIC_PORT"]),
+                "uuid": user["uuid"],
+                "password": user["tuic_password"],
+                "congestion_control": env.get("TUIC_CONGESTION_CONTROL", DEFAULT_TUIC_CONGESTION),
+                "udp_relay_mode": "native",
+                "zero_rtt_handshake": False,
+                "heartbeat": "10s",
+                "tls": {
+                    "enabled": True,
+                    "server_name": cdn_domain(env) or env.get("SERVER_HOST") or env.get("HY2_TLS_SNI") or server,
+                    "utls": {"enabled": True, "fingerprint": fingerprint},
+                    "alpn": ["h3"],
+                },
+            },
+            {"type": "direct", "tag": "direct"},
+            {"type": "block", "tag": "block"},
+        ]
+    )
     return {
         "log": {"level": "warn"},
         "dns": {
@@ -1028,6 +1254,56 @@ def build_hy2_client(user: dict[str, Any], env: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def build_ss2022_client(user: dict[str, Any], env: dict[str, str]) -> str:
+    sample = {
+        "outbounds": [
+            {
+                "type": "shadowsocks",
+                "tag": "ss2022",
+                "server": env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1",
+                "server_port": int(env["SS2022_PORT"]),
+                "method": SS2022_METHOD,
+                "password": f"{env['SS2022_KEY']}:{user['ss2022_password']}",
+                "multiplex": {"enabled": True, "padding": True},
+            }
+        ]
+    }
+    return (
+        f"URI:\n{build_ss2022_uri(user, env)}\n\n"
+        "sing-box client snippet:\n"
+        f"{json.dumps(sample, indent=2)}\n"
+    )
+
+
+def build_tuic_client(user: dict[str, Any], env: dict[str, str]) -> str:
+    sample = {
+        "outbounds": [
+            {
+                "type": "tuic",
+                "tag": "tuic",
+                "server": env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1",
+                "server_port": int(env["TUIC_PORT"]),
+                "uuid": user["uuid"],
+                "password": user["tuic_password"],
+                "congestion_control": env.get("TUIC_CONGESTION_CONTROL", DEFAULT_TUIC_CONGESTION),
+                "udp_relay_mode": "native",
+                "zero_rtt_handshake": False,
+                "heartbeat": "10s",
+                "tls": {
+                    "enabled": True,
+                    "server_name": cdn_domain(env) or env.get("SERVER_HOST") or env.get("HY2_TLS_SNI") or "127.0.0.1",
+                    "alpn": ["h3"],
+                },
+            }
+        ]
+    }
+    return (
+        f"URI:\n{build_tuic_uri(user, env)}\n\n"
+        "sing-box client snippet:\n"
+        f"{json.dumps(sample, indent=2)}\n"
+    )
+
+
 def is_truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -1054,6 +1330,8 @@ def build_readme(user: dict[str, Any], env: dict[str, str], uris: list[str]) -> 
         "xray_client.json -> AmneziaVPN, v2rayN, Happ, Throne",
         "singbox_client.json -> Streisand, Karing, NekoBox, v2RayTun",
         "hy2_client.yaml -> Hysteria2 apps, sing-box, Happ",
+        "ss2022.txt -> sing-box, Shadowrocket, Nekoray, SS-compatible clients",
+        "tuic.txt -> sing-box, Streisand, Nekoray, Mihomo-compatible apps",
         "wg.conf -> WireGuard",
         "awg.conf -> AmneziaWG, AmneziaVPN",
         "proxy.txt -> HTTP/SOCKS5 apps, curl, browsers",
@@ -1065,6 +1343,8 @@ def build_readme(user: dict[str, Any], env: dict[str, str], uris: list[str]) -> 
         "iPhone/iPad: use the subscription URL in Streisand / Shadowrocket / Karing / V2Box / v2RayTun / Happ",
         "AmneziaVPN: import xray_client.json, awg.conf or wg.conf",
         "Hysteria2-compatible apps: import the hysteria2:// URI from uris.txt or use hy2_client.yaml",
+        "SS2022-compatible apps: import the ss:// URI from uris.txt or copy ss2022.txt",
+        "TUIC-capable apps: import the tuic:// URI from uris.txt or copy tuic.txt",
         "Telegram: open a link from mtproto.txt",
         "HTTP/SOCKS5 proxy: use proxy.txt",
         "",
@@ -1112,6 +1392,8 @@ def write_user_bundle(user: dict[str, Any], env: dict[str, str]) -> None:
     files["xray"].write_text(json.dumps(build_xray_client(user, env), indent=2) + "\n")
     files["singbox"].write_text(json.dumps(build_singbox_client(user, env), indent=2) + "\n")
     files["hy2"].write_text(build_hy2_client(user, env))
+    files["ss2022"].write_text(build_ss2022_client(user, env))
+    files["tuic"].write_text(build_tuic_client(user, env))
     files["wg"].write_text(build_wg_client(user, env))
     files["awg"].write_text(build_awg_client(user, env))
     files["proxy"].write_text(build_proxy_txt(user, env))
@@ -1122,24 +1404,46 @@ def write_user_bundle(user: dict[str, Any], env: dict[str, str]) -> None:
     maybe_qr_png(files["wg"].read_text(), files["qr_wg"])
     maybe_qr_png(sub_url, files["qr_sub"])
 
+def xray_server_user(user: dict[str, Any]) -> dict[str, Any]:
+    return {"id": user["uuid"], "email": user["email"]}
 
-def xray_server_user(user: dict[str, Any], with_flow: bool) -> dict[str, Any]:
-    entry = {"id": user["uuid"], "email": user["email"]}
-    if with_flow:
-        entry["flow"] = "xtls-rprx-vision"
-    return entry
+
+def build_reality_inbound(tag: str, port: int, clients: list[dict[str, Any]], env: dict[str, str]) -> dict[str, Any]:
+    return {
+        "tag": tag,
+        "listen": "0.0.0.0",
+        "port": port,
+        "protocol": "vless",
+        "settings": {
+            "clients": clients,
+            "decryption": "none",
+            "fallbacks": [{"dest": 80, "xver": 0}],
+        },
+        "streamSettings": {
+            "network": "tcp",
+            "security": "reality",
+            "realitySettings": {
+                "target": env["XRAY_REALITY_TARGET"],
+                "serverNames": [env["XRAY_REALITY_SNI"]],
+                "privateKey": env["XRAY_REALITY_PRIVATE_KEY"],
+                "shortIds": [env["XRAY_REALITY_SHORT_ID"]],
+            },
+        },
+        "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
+    }
 
 
 def build_xray_server(users: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
     users_list = list(users.values())
-    vless_users = [xray_server_user(user, with_flow=False) for user in users_list]
-    reality_users = [xray_server_user(user, with_flow=True) for user in users_list]
+    vless_users = [xray_server_user(user) for user in users_list]
+    reality_users = [xray_server_user(user) for user in users_list]
     vmess_users = [{"id": user["uuid"], "email": user["email"]} for user in users_list]
     outbounds: list[dict[str, Any]] = [
         {"protocol": "freedom", "tag": "direct"},
         {"protocol": "blackhole", "tag": "block"},
     ]
     routing_rules: list[dict[str, Any]] = []
+    inbounds: list[dict[str, Any]] = []
 
     if is_truthy(env.get("XRAY_WARP_ENABLE")):
         outbounds.append(
@@ -1165,37 +1469,10 @@ def build_xray_server(users: dict[str, Any], env: dict[str, str]) -> dict[str, A
                     "outboundTag": "warp",
                 }
             )
-    return {
-        "log": {"loglevel": "warning"},
-        "api": {
-            "tag": "api",
-            "listen": env["XRAY_API_LISTEN"],
-            "services": ["HandlerService", "LoggerService", "StatsService", "ReflectionService"],
-        },
-        "stats": {},
-        "policy": {
-            "levels": {"0": {"statsUserUplink": True, "statsUserDownlink": True}},
-            "system": {"statsInboundUplink": True, "statsInboundDownlink": True},
-        },
-        "inbounds": [
-            {
-                "tag": "vless-reality-tcp",
-                "listen": "0.0.0.0",
-                "port": int(env["XRAY_PORT_REALITY"]),
-                "protocol": "vless",
-                "settings": {"clients": reality_users, "decryption": "none"},
-                "streamSettings": {
-                    "network": "tcp",
-                    "security": "reality",
-                    "realitySettings": {
-                        "target": env["XRAY_REALITY_TARGET"],
-                        "serverNames": [env["XRAY_REALITY_SNI"]],
-                        "privateKey": env["XRAY_REALITY_PRIVATE_KEY"],
-                        "shortIds": [env["XRAY_REALITY_SHORT_ID"]],
-                    },
-                },
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"]},
-            },
+    for endpoint in reality_endpoints(env):
+        inbounds.append(build_reality_inbound(endpoint["tag"], endpoint["port"], reality_users, env))
+    inbounds.extend(
+        [
             {
                 "tag": "vless-xhttp",
                 "listen": "0.0.0.0",
@@ -1242,7 +1519,36 @@ def build_xray_server(users: dict[str, Any], env: dict[str, str]) -> dict[str, A
                 "settings": {"clients": vmess_users},
                 "streamSettings": {"network": "ws", "wsSettings": {"path": env["XRAY_VMESS_WS_PATH"]}},
             },
-        ],
+        ]
+    )
+    if has_cdn_domain(env):
+        inbounds.append(
+            {
+                "tag": "vless-xhttp-cdn",
+                "listen": "127.0.0.1",
+                "port": int(env["XRAY_PORT_XHTTP_CDN"]),
+                "protocol": "vless",
+                "settings": {"clients": vless_users, "decryption": "none"},
+                "streamSettings": {
+                    "network": "xhttp",
+                    "security": "none",
+                    "xhttpSettings": {"path": env["XRAY_XHTTP_PATH"]},
+                },
+            }
+        )
+    return {
+        "log": {"loglevel": "warning"},
+        "api": {
+            "tag": "api",
+            "listen": env["XRAY_API_LISTEN"],
+            "services": ["HandlerService", "LoggerService", "StatsService", "ReflectionService"],
+        },
+        "stats": {},
+        "policy": {
+            "levels": {"0": {"statsUserUplink": True, "statsUserDownlink": True}},
+            "system": {"statsInboundUplink": True, "statsInboundDownlink": True},
+        },
+        "inbounds": inbounds,
         "routing": {
             "domainStrategy": "AsIs",
             "rules": routing_rules,
@@ -1354,12 +1660,70 @@ def build_hysteria_server(users: dict[str, Any], env: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def build_ss2022_server(users: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
+    client_rows = [{"name": user["name"], "password": user["ss2022_password"]} for user in users.values()]
+    if not client_rows:
+        client_rows = [{"name": "vpn-placeholder", "password": random_b64()}]
+    return {
+        "log": {"level": "warn"},
+        "inbounds": [
+            {
+                "type": "shadowsocks",
+                "tag": "ss2022-in",
+                "listen": "::",
+                "listen_port": int(env["SS2022_PORT"]),
+                "network": "tcp",
+                "method": SS2022_METHOD,
+                "password": env["SS2022_KEY"],
+                "users": client_rows,
+                "multiplex": {"enabled": True, "padding": True},
+            }
+        ],
+        "outbounds": [{"type": "direct", "tag": "direct"}],
+    }
+
+
+def build_tuic_server(users: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
+    client_rows = [
+        {"name": user["name"], "uuid": user["uuid"], "password": user["tuic_password"]}
+        for user in users.values()
+    ]
+    if not client_rows:
+        client_rows = [{"name": "vpn-placeholder", "uuid": str(uuid.uuid4()), "password": secrets.token_urlsafe(18)}]
+    return {
+        "log": {"level": "warn"},
+        "inbounds": [
+            {
+                "type": "tuic",
+                "tag": "tuic-in",
+                "listen": "::",
+                "listen_port": int(env["TUIC_PORT"]),
+                "users": client_rows,
+                "congestion_control": env.get("TUIC_CONGESTION_CONTROL", DEFAULT_TUIC_CONGESTION),
+                "auth_timeout": "3s",
+                "zero_rtt_handshake": False,
+                "heartbeat": "10s",
+                "tls": {
+                    "enabled": True,
+                    "server_name": cdn_domain(env) or env.get("SERVER_HOST") or env.get("HY2_TLS_SNI") or "127.0.0.1",
+                    "certificate_path": env["HY2_CERT_PATH"],
+                    "key_path": env["HY2_KEY_PATH"],
+                    "alpn": ["h3"],
+                },
+            }
+        ],
+        "outbounds": [{"type": "direct", "tag": "direct"}],
+    }
+
+
 def render_services() -> None:
     env = load_env()
     users = active_users(load_db()["users"])
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
     (GENERATED_DIR / "xray_server.json").write_text(json.dumps(build_xray_server(users, env), indent=2) + "\n")
     (GENERATED_DIR / "hysteria_server.yaml").write_text(build_hysteria_server(users, env))
+    (GENERATED_DIR / "ss2022_server.json").write_text(json.dumps(build_ss2022_server(users, env), indent=2) + "\n")
+    (GENERATED_DIR / "tuic_server.json").write_text(json.dumps(build_tuic_server(users, env), indent=2) + "\n")
     (GENERATED_DIR / "wg_server.conf").write_text(build_wg_server(users, env, awg=False))
     (GENERATED_DIR / "awg_server.conf").write_text(build_wg_server(users, env, awg=True))
     (GENERATED_DIR / "3proxy.cfg").write_text(render_3proxy(users, env))
@@ -1400,6 +1764,8 @@ def user_file_payload(name: str) -> dict[str, str]:
         "xray": str(files["xray"]),
         "singbox": str(files["singbox"]),
         "hy2": str(files["hy2"]),
+        "ss2022": str(files["ss2022"]),
+        "tuic": str(files["tuic"]),
         "wg": str(files["wg"]),
         "awg": str(files["awg"]),
         "proxy": str(files["proxy"]),
@@ -1584,11 +1950,15 @@ def status_payload() -> dict[str, Any]:
     ]
     ports = {
         "reality": env["XRAY_PORT_REALITY"],
+        "reality_alt": env.get("XRAY_PORT_REALITY_ALT", ""),
         "xhttp": env["XRAY_PORT_XHTTP"],
+        "xhttp_cdn_loopback": env.get("XRAY_PORT_XHTTP_CDN", ""),
         "ws": env["XRAY_PORT_WS"],
         "grpc": env["XRAY_PORT_GRPC"],
         "vmess": env["XRAY_PORT_VMESS"],
         "hy2_udp": env["HY2_PORT"],
+        "ss2022": env["SS2022_PORT"],
+        "tuic_udp": env["TUIC_PORT"],
         "http_proxy": env["HTTP_PROXY_PORT"],
         "socks5_proxy": env["SOCKS5_PROXY_PORT"],
         "subscription": env["SUB_PORT"],
@@ -1615,11 +1985,15 @@ def print_status_summary(*, legacy: bool = False) -> None:
         print(
             "Ports: "
             f"reality={ports['reality']} "
+            f"reality_alt={ports['reality_alt']} "
             f"xhttp={ports['xhttp']} "
+            f"xhttp_cdn_loopback={ports['xhttp_cdn_loopback']} "
             f"ws={ports['ws']} "
             f"grpc={ports['grpc']} "
             f"vmess={ports['vmess']} "
             f"hy2={ports['hy2_udp']}/udp "
+            f"ss2022={ports['ss2022']} "
+            f"tuic={ports['tuic_udp']}/udp "
             f"http={ports['http_proxy']} "
             f"socks5={ports['socks5_proxy']} "
             f"sub={ports['subscription']} "
@@ -1786,7 +2160,7 @@ def install_stack() -> None:
 
 
 def update_stack() -> None:
-    for script in ("install_xray.sh", "install_hysteria.sh", "install_mtproto.sh"):
+    for script in ("install_xray.sh", "install_hysteria.sh", "install_ss2022.sh", "install_tuic.sh", "install_mtproto.sh"):
         run_command("bash", str(ROOT / "scripts" / script), "--upgrade", capture_output=False)
 
 
@@ -1809,6 +2183,8 @@ def uninstall_stack(*, yes: bool) -> None:
             "3proxy.service",
             "xray.service",
             "hysteria.service",
+            "ss2022.service",
+            "tuic.service",
             "wg-quick@wg0.service",
             "awg-quick@awg0.service",
             check=False,
@@ -1818,6 +2194,8 @@ def uninstall_stack(*, yes: bool) -> None:
         "/etc/systemd/system/vpn-sub.service",
         "/etc/systemd/system/vpn-bot.service",
         "/etc/systemd/system/hysteria.service",
+        "/etc/systemd/system/ss2022.service",
+        "/etc/systemd/system/tuic.service",
         "/etc/systemd/system/3proxy.service",
     ):
         try:

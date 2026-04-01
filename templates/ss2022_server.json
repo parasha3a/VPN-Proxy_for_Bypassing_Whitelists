@@ -1,0 +1,32 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "inbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "ss2022-in",
+      "listen": "::",
+      "listen_port": 8388,
+      "network": "tcp",
+      "method": "2022-blake3-aes-256-gcm",
+      "password": "<server_password>",
+      "users": [
+        {
+          "name": "alice",
+          "password": "<user_password>"
+        }
+      ],
+      "multiplex": {
+        "enabled": true,
+        "padding": true
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ]
+}

@@ -1,4 +1,21 @@
-# VPN / Proxy Deploy Toolkit
+<div align="center">
+  <h1>VPN / Proxy Deploy Toolkit</h1>
+  <p><strong>Self-hosted stack for bypassing DPI, whitelist blocks and regional filtering.</strong></p>
+  <p>Русскоязычная документация, VPS installer, web admin, Telegram bot, квоты, подписки и hardened-by-default серверный сетап.</p>
+
+  <p>
+    <img src="https://img.shields.io/badge/Python-CLI-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python CLI" />
+    <img src="https://img.shields.io/badge/Bash-Installer-121011?style=for-the-badge&logo=gnubash&logoColor=white" alt="Bash installer" />
+    <img src="https://img.shields.io/badge/Linux-Ubuntu%2022.04%2B-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux" />
+    <img src="https://img.shields.io/badge/Web-Admin_Panel-0F172A?style=for-the-badge&logo=html5&logoColor=white" alt="Web admin" />
+  </p>
+  <p>
+    <img src="https://img.shields.io/badge/Xray-core-REALITY%20%2B%20WS%20%2B%20gRPC-111827?style=for-the-badge" alt="Xray" />
+    <img src="https://img.shields.io/badge/Hysteria2-QUIC%20fallback-0EA5E9?style=for-the-badge" alt="Hysteria2" />
+    <img src="https://img.shields.io/badge/WireGuard-AmneziaWG-88171A?style=for-the-badge&logo=wireguard&logoColor=white" alt="WireGuard" />
+    <img src="https://img.shields.io/badge/Telegram-Bot%20%2B%20MTProto-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram" />
+  </p>
+</div>
 
 Самостоятельный набор для развёртывания VPN и прокси на своём VPS: Xray, Hysteria2, AmneziaWG, WireGuard, HTTP/SOCKS5, MTProto, web-админка, CLI, Telegram bot, квоты и подписки без внешней панели управления и без отдельной базы данных.
 

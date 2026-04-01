@@ -1,0 +1,16 @@
+{
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "ss2022",
+      "server": "vpn.example.com",
+      "server_port": 8388,
+      "method": "2022-blake3-aes-256-gcm",
+      "password": "<server_password>:<user_password>",
+      "multiplex": {
+        "enabled": true,
+        "padding": true
+      }
+    }
+  ]
+}

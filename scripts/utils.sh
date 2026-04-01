@@ -33,11 +33,14 @@ VPN_SSH_PORT=22
 VPN_SSH_ALLOW_USERS=root
 VPN_SSH_PASSWORD_ONLY=1
 XRAY_PORT_REALITY=443
+XRAY_PORT_REALITY_ALT=47043
 XRAY_PORT_XHTTP=8443
+XRAY_PORT_XHTTP_CDN=39090
 XRAY_PORT_WS=8444
 XRAY_PORT_GRPC=8445
 XRAY_PORT_VMESS=8446
 XRAY_API_LISTEN=127.0.0.1:10085
+XRAY_CDN_DOMAIN=
 XRAY_REALITY_SNI=www.microsoft.com
 XRAY_REALITY_FINGERPRINT=chrome
 XRAY_REALITY_TARGET=www.microsoft.com:443
@@ -58,6 +61,12 @@ HY2_PIN_SHA256=CHANGE_ME
 HY2_CERT_PATH=/etc/hysteria/server.crt
 HY2_KEY_PATH=/etc/hysteria/server.key
 HY2_CONFIG_PATH=/etc/hysteria/config.yaml
+SS2022_PORT=8388
+SS2022_KEY=CHANGE_ME
+SS2022_CONFIG_PATH=/etc/sing-box/ss2022.json
+TUIC_PORT=8448
+TUIC_CONGESTION_CONTROL=bbr
+TUIC_CONFIG_PATH=/etc/sing-box/tuic.json
 XRAY_WARP_ENABLE=0
 XRAY_WARP_PORT=40000
 XRAY_WARP_DOMAINS=gemini.google.com,aistudio.google.com,generativelanguage.googleapis.com
@@ -139,6 +148,8 @@ print_status() {
   echo "Services:"
   print_single_service xray.service
   print_single_service hysteria.service
+  print_single_service ss2022.service
+  print_single_service tuic.service
   print_single_service vpn-sub.service
   print_single_service 3proxy.service
   print_single_service mtg.service
@@ -279,23 +290,36 @@ detect_arch() {
 github_latest_asset() {
   local repo="$1"
   local pattern="$2"
-  python3 - "$repo" "$pattern" <<'PY'
-import json
-import sys
-from urllib.request import urlopen
+  local url
+  url="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" \
+    | jq -r --arg pattern "$pattern" '.assets[] | select(.name | contains($pattern)) | .browser_download_url' \
+    | head -n 1)"
+  [[ -n "$url" ]] || die "no asset found for pattern: $pattern in $repo"
+  printf '%s\n' "$url"
+}
 
-repo, pattern = sys.argv[1], sys.argv[2]
-url = f"https://api.github.com/repos/{repo}/releases/latest"
-with urlopen(url) as resp:
-    data = json.load(resp)
-for asset in data.get("assets", []):
-    name = asset.get("name", "")
-    if pattern in name:
-        print(asset["browser_download_url"])
-        break
-else:
-    raise SystemExit(f"no asset found for pattern: {pattern}")
-PY
+detect_singbox_arch() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo "amd64" ;;
+    aarch64|arm64) echo "arm64" ;;
+    *) die "unsupported sing-box architecture: $(uname -m)" ;;
+  esac
+}
+
+install_singbox_binary() {
+  local upgrade="${1:-}"
+  local arch asset_url tmp_dir tarball
+  if [[ -x /usr/local/bin/sing-box && "$upgrade" != "--upgrade" ]]; then
+    return 0
+  fi
+  arch="$(detect_singbox_arch)"
+  asset_url="$(github_latest_asset "SagerNet/sing-box" "linux-${arch}.tar.gz")"
+  tmp_dir="$(mktemp -d)"
+  tarball="$tmp_dir/sing-box.tar.gz"
+  download_file "$asset_url" "$tarball"
+  tar -xzf "$tarball" -C "$tmp_dir"
+  install -m 755 "$(find "$tmp_dir" -type f -name sing-box | head -n 1)" /usr/local/bin/sing-box
+  rm -rf "$tmp_dir"
 }
 
 download_file() {
@@ -313,13 +337,15 @@ uninstall_stack() {
   fi
 
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl disable --now vpn-bot.service vpn-sub.service mtg.service 3proxy.service xray.service hysteria.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true
+    systemctl disable --now vpn-bot.service vpn-sub.service mtg.service 3proxy.service xray.service hysteria.service ss2022.service tuic.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true
   fi
 
   rm -f /usr/local/bin/vpn
   rm -f /etc/systemd/system/vpn-sub.service
   rm -f /etc/systemd/system/vpn-bot.service
   rm -f /etc/systemd/system/hysteria.service
+  rm -f /etc/systemd/system/ss2022.service
+  rm -f /etc/systemd/system/tuic.service
   systemctl daemon-reload 2>/dev/null || true
 
   echo "Stack services removed. Project files remain in: $root"

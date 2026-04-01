@@ -71,6 +71,21 @@ print(secrets.token_hex(16))
 PY
 }
 
+random_high_port() {
+  python3 - <<'PY'
+import secrets
+print(47000 + secrets.randbelow(18000))
+PY
+}
+
+random_ss2022_key() {
+  python3 - <<'PY'
+import base64
+import secrets
+print(base64.b64encode(secrets.token_bytes(32)).decode())
+PY
+}
+
 main() {
   require_root
   ensure_project_layout "$ROOT_DIR"
@@ -86,23 +101,27 @@ main() {
   echo "Detected public IP: $public_ip"
   echo "Detected NIC: $server_nic"
 
-  local server_name server_host nic install_wg install_bot install_warp
+  local server_name server_host nic install_wg install_bot install_warp cdn_domain
   server_name="$(prompt_default "Server name" "MyVPN")"
   server_host="$(prompt_default "Share host/IP" "$public_ip")"
   nic="$(prompt_default "Network interface" "$server_nic")"
+  cdn_domain="$(prompt_default "Cloudflare domain for CDN mode (leave blank to disable)" "")"
   install_wg="N"
   install_bot="N"
   install_warp="N"
 
   echo
   echo "Port customization (Enter to keep defaults):"
-  local port_reality port_xhttp port_ws port_grpc port_vmess port_hy2 port_http port_socks5 port_sub port_mtproto port_wg
+  local port_reality port_reality_alt port_xhttp port_ws port_grpc port_vmess port_hy2 port_ss2022 port_tuic port_http port_socks5 port_sub port_mtproto port_wg
   port_reality="$(prompt_default "  VLESS Reality port" "443")"
+  port_reality_alt="$(prompt_default "  VLESS Reality alt port" "$(random_high_port)")"
   port_xhttp="$(prompt_default "  VLESS XHTTP port" "8443")"
   port_ws="$(prompt_default "  VLESS WS port" "8444")"
   port_grpc="$(prompt_default "  VLESS gRPC port" "8445")"
   port_vmess="$(prompt_default "  VMess WS port" "8446")"
   port_hy2="$(prompt_default "  Hysteria2 UDP port" "443")"
+  port_ss2022="$(prompt_default "  Shadowsocks 2022 port" "8388")"
+  port_tuic="$(prompt_default "  TUIC v5 UDP port" "8448")"
   port_http="$(prompt_default "  HTTP proxy port" "8080")"
   port_socks5="$(prompt_default "  SOCKS5 proxy port" "1080")"
   port_sub="$(prompt_default "  Subscription server port" "8000")"
@@ -127,25 +146,40 @@ main() {
   write_env_value VPN_SSH_ALLOW_USERS "root"
   write_env_value VPN_SSH_PASSWORD_ONLY "1"
   write_env_value XRAY_PORT_REALITY "$port_reality"
+  write_env_value XRAY_PORT_REALITY_ALT "$port_reality_alt"
   write_env_value XRAY_PORT_XHTTP "$port_xhttp"
+  write_env_value XRAY_PORT_XHTTP_CDN "39090"
   write_env_value XRAY_PORT_WS "$port_ws"
   write_env_value XRAY_PORT_GRPC "$port_grpc"
   write_env_value XRAY_PORT_VMESS "$port_vmess"
+  write_env_value XRAY_CDN_DOMAIN "$cdn_domain"
   write_env_value HY2_PORT "$port_hy2"
   write_env_value HY2_TLS_SNI "$server_host"
+  write_env_value SS2022_PORT "$port_ss2022"
+  write_env_value TUIC_PORT "$port_tuic"
+  write_env_value TUIC_CONGESTION_CONTROL "bbr"
   write_env_value HTTP_PROXY_PORT "$port_http"
   write_env_value SOCKS5_PROXY_PORT "$port_socks5"
   write_env_value SUB_PORT "$port_sub"
   write_env_value MTPROTO_PORT "$port_mtproto"
   write_env_value WG_SERVER_PORT "$port_wg"
   write_env_value XRAY_WARP_ENABLE "$([[ "$install_warp" == "Y" ]] && echo 1 || echo 0)"
+  write_env_value SS2022_CONFIG_PATH "/etc/sing-box/ss2022.json"
+  write_env_value TUIC_CONFIG_PATH "/etc/sing-box/tuic.json"
   if ! grep -q '^VPN_PANEL_TOKEN=' "$ROOT_DIR/data/server.env" || grep -q '^VPN_PANEL_TOKEN=CHANGE_ME$' "$ROOT_DIR/data/server.env"; then
     write_env_value VPN_PANEL_TOKEN "$(random_token)"
+  fi
+  if ! grep -q '^SS2022_KEY=' "$ROOT_DIR/data/server.env" || grep -q '^SS2022_KEY=CHANGE_ME$' "$ROOT_DIR/data/server.env"; then
+    write_env_value SS2022_KEY "$(random_ss2022_key)"
   fi
 
   echo
   echo "[x] Xray-core (VLESS Reality + XHTTP + WS + gRPC + VMess)"
+  echo "[x] VLESS Reality alt port"
+  if [[ -n "$cdn_domain" ]]; then echo "[x] XHTTP via Cloudflare CDN ($cdn_domain)"; else echo "[ ] XHTTP via Cloudflare CDN"; fi
   echo "[x] Hysteria2"
+  echo "[x] Shadowsocks 2022"
+  echo "[x] TUIC v5"
   echo "[x] AmneziaWG"
   if [[ "$install_wg" == "Y" ]]; then echo "[x] WireGuard plain"; else echo "[ ] WireGuard plain"; fi
   if [[ "$install_warp" == "Y" ]]; then echo "[x] Cloudflare WARP egress"; else echo "[ ] Cloudflare WARP egress"; fi
@@ -161,6 +195,8 @@ main() {
   "$ROOT_DIR/scripts/install_network_tuning.sh"
   "$ROOT_DIR/scripts/install_xray.sh"
   "$ROOT_DIR/scripts/install_hysteria.sh"
+  "$ROOT_DIR/scripts/install_ss2022.sh"
+  "$ROOT_DIR/scripts/install_tuic.sh"
   if [[ "$install_warp" == "Y" ]]; then
     "$ROOT_DIR/scripts/install_warp.sh"
   fi
@@ -198,6 +234,9 @@ main() {
   echo "  Admin bundle: $ROOT_DIR/users/admin"
   echo "  Command: /usr/local/bin/vpn"
   echo "  Public subscriptions: http://${server_host}:${port_sub}/sub/<name>"
+  if [[ -n "$cdn_domain" ]]; then
+    echo "  CDN endpoint: https://${cdn_domain}${XRAY_XHTTP_PATH:-/vless-xhttp}"
+  fi
   echo "  Admin UI tunnel: ssh -L 8081:127.0.0.1:8081 root@${server_host}"
   echo "  Then open: http://127.0.0.1:8081/  (token in $ROOT_DIR/data/server.env -> VPN_PANEL_TOKEN)"
   echo

@@ -45,12 +45,14 @@ const navToggleButton = document.getElementById("navToggleButton");
 const mobileBackdrop = document.getElementById("mobileBackdrop");
 const actionToast = document.getElementById("actionToast");
 
-const FILE_ORDER = ["readme", "xray", "singbox", "hy2", "wg", "awg", "proxy", "mtproto", "uris", "subscription_url"];
+const FILE_ORDER = ["readme", "xray", "singbox", "hy2", "ss2022", "tuic", "wg", "awg", "proxy", "mtproto", "uris", "subscription_url"];
 const FILE_LABELS = {
   readme: "README",
   xray: "Xray",
   singbox: "sing-box",
   hy2: "Hysteria2",
+  ss2022: "SS2022",
+  tuic: "TUIC",
   wg: "WireGuard",
   awg: "AmneziaWG",
   proxy: "Proxy",

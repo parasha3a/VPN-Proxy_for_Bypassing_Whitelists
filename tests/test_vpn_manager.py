@@ -20,12 +20,17 @@ def sample_env() -> dict[str, str]:
         "SERVER_HOST": "vpn.example.com",
         "SUB_PORT": "8000",
         "XRAY_PORT_REALITY": "443",
+        "XRAY_PORT_REALITY_ALT": "47043",
         "XRAY_PORT_XHTTP": "8443",
+        "XRAY_PORT_XHTTP_CDN": "39090",
         "XRAY_PORT_WS": "8444",
         "XRAY_PORT_GRPC": "8445",
         "XRAY_PORT_VMESS": "8446",
+        "XRAY_CDN_DOMAIN": "",
         "XRAY_REALITY_SNI": "www.microsoft.com",
         "XRAY_REALITY_FINGERPRINT": "chrome",
+        "XRAY_REALITY_TARGET": "www.microsoft.com:443",
+        "XRAY_REALITY_PRIVATE_KEY": "PRIVATEKEY",
         "XRAY_REALITY_PUBLIC_KEY": "PUBLICKEY",
         "XRAY_REALITY_SHORT_ID": "0123456789abcdef",
         "XRAY_XHTTP_PATH": "/vless-xhttp",
@@ -38,13 +43,20 @@ def sample_env() -> dict[str, str]:
         "HY2_OBFS_PASSWORD": "obfs-secret",
         "HY2_TLS_SNI": "vpn.example.com",
         "HY2_PIN_SHA256": "PIN",
+        "HY2_CERT_PATH": "/etc/hysteria/server.crt",
+        "HY2_KEY_PATH": "/etc/hysteria/server.key",
         "HTTP_PROXY_PORT": "8080",
         "SOCKS5_PROXY_PORT": "1080",
         "MTPROTO_PORT": "8447",
         "MTPROTO_SECRET": "SECRET",
+        "SS2022_PORT": "8388",
+        "SS2022_KEY": "SERVERPASS",
+        "TUIC_PORT": "8448",
+        "TUIC_CONGESTION_CONTROL": "bbr",
         "WG_SERVER_PORT": "51820",
         "WG_DNS": "1.1.1.1,8.8.8.8",
         "WG_SERVER_PUBLIC_KEY": "WG_PUBLIC",
+        "XRAY_API_LISTEN": "127.0.0.1:10085",
     }
 
 
@@ -54,10 +66,13 @@ def sample_user() -> dict[str, str]:
         "created": "2026-03-31T10:00:00+00:00",
         "uuid": "11111111-1111-1111-1111-111111111111",
         "email": "alice@vpn.local",
+        "fingerprint": "firefox",
         "proxy_username": "alice",
         "proxy_password": "proxy-pass",
         "hy2_username": "alice",
         "hy2_password": "hy2-pass",
+        "ss2022_password": "USERPASS",
+        "tuic_password": "tuic-pass",
         "wg_private_key": "WG_PRIVATE",
         "wg_public_key": "WG_PUB",
         "wg_preshared_key": "WG_PSK",
@@ -159,6 +174,8 @@ class VpnManagerTests(unittest.TestCase):
         self.assertEqual(index["xray"].name, "xray_client.json")
         self.assertEqual(index["singbox"].name, "singbox_client.json")
         self.assertEqual(index["hy2"].name, "hy2_client.yaml")
+        self.assertEqual(index["ss2022"].name, "ss2022.txt")
+        self.assertEqual(index["tuic"].name, "tuic.txt")
         self.assertEqual(index["wg"].name, "wg.conf")
         self.assertEqual(index["awg"].name, "awg.conf")
         self.assertEqual(index["proxy"].name, "proxy.txt")
@@ -169,6 +186,8 @@ class VpnManagerTests(unittest.TestCase):
 
         self.assertIn("xray_client.json -> AmneziaVPN", readme)
         self.assertIn("singbox_client.json -> Streisand", readme)
+        self.assertIn("ss2022.txt -> sing-box", readme)
+        self.assertIn("tuic.txt -> sing-box", readme)
         self.assertIn("proxy.txt -> HTTP/SOCKS5 apps", readme)
         self.assertIn("mtproto.txt -> Telegram", readme)
 
@@ -188,9 +207,6 @@ class VpnManagerTests(unittest.TestCase):
 
     def test_build_xray_server_adds_warp_outbound_and_route_when_enabled(self) -> None:
         env = sample_env() | {
-            "XRAY_API_LISTEN": "127.0.0.1:10085",
-            "XRAY_REALITY_TARGET": "www.microsoft.com:443",
-            "XRAY_REALITY_PRIVATE_KEY": "PRIVATEKEY",
             "XRAY_WARP_ENABLE": "1",
             "XRAY_WARP_PORT": "40000",
             "XRAY_WARP_DOMAINS": "gemini.google.com,aistudio.google.com",
@@ -201,6 +217,47 @@ class VpnManagerTests(unittest.TestCase):
         self.assertEqual(warp_outbound["protocol"], "socks")
         self.assertEqual(warp_outbound["settings"]["servers"][0]["port"], 40000)
         self.assertTrue(any(rule.get("outboundTag") == "warp" for rule in server["routing"]["rules"]))
+
+    def test_build_uris_uses_per_user_fingerprint_and_new_transports(self) -> None:
+        env = sample_env() | {"XRAY_CDN_DOMAIN": "cdn.example.com"}
+        uris = vpn_manager.build_uris(sample_user(), env)
+        joined = "\n".join(uris)
+
+        self.assertIn("fp=firefox", joined)
+        self.assertIn("#MyVPN-alice-XHTTP-CDN", joined)
+        self.assertIn("ss://", joined)
+        self.assertIn("tuic://", joined)
+        self.assertNotIn("xtls-rprx-vision", joined)
+
+    def test_build_xray_client_adds_mux_and_removes_flow(self) -> None:
+        config = vpn_manager.build_xray_client(sample_user(), sample_env())
+
+        reality = next(item for item in config["outbounds"] if item["tag"] == "vless-reality-tcp")
+        self.assertEqual(reality["mux"]["concurrency"], 8)
+        self.assertEqual(reality["mux"]["xudpProxyUDP443"], "reject")
+        self.assertNotIn("flow", reality["settings"]["vnext"][0]["users"][0])
+
+    def test_build_xray_server_adds_alt_reality_and_cdn_loopback(self) -> None:
+        env = sample_env() | {"XRAY_CDN_DOMAIN": "cdn.example.com"}
+        server = vpn_manager.build_xray_server({"alice": sample_user()}, env)
+        tags = {item["tag"] for item in server["inbounds"]}
+
+        self.assertIn("vless-reality-alt", tags)
+        self.assertIn("vless-xhttp-cdn", tags)
+        self.assertNotIn("vless-reality-tcp", tags)
+        alt = next(item for item in server["inbounds"] if item["tag"] == "vless-reality-alt")
+        self.assertEqual(alt["settings"]["fallbacks"][0]["dest"], 80)
+
+    def test_build_singbox_client_adds_ss2022_tuic_and_cdn_outbounds(self) -> None:
+        env = sample_env() | {"XRAY_CDN_DOMAIN": "cdn.example.com"}
+        config = vpn_manager.build_singbox_client(sample_user(), env)
+        tags = {item["tag"] for item in config["outbounds"] if "tag" in item}
+
+        self.assertIn("vless-xhttp-cdn", tags)
+        self.assertIn("ss2022", tags)
+        self.assertIn("tuic", tags)
+        reality = next(item for item in config["outbounds"] if item.get("tag") == "vless-reality-alt")
+        self.assertNotIn("flow", reality)
 
     def test_parse_xray_stats_output_groups_bytes_by_user(self) -> None:
         raw = """

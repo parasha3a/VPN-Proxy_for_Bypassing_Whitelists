@@ -95,6 +95,7 @@ main() {
 
   systemctl enable xray.service
   systemctl restart xray.service
+  "$ROOT_DIR/scripts/install_nginx.sh"
 }
 
 main "$@"
