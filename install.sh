@@ -25,6 +25,24 @@ detect_nic() {
   ip route show default 2>/dev/null | awk '/default/ {print $5; exit}' || echo "eth0"
 }
 
+looks_like_hostname() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import re
+import sys
+
+value = sys.argv[1].strip()
+if not value or re.search(r"\s", value):
+    raise SystemExit(1)
+try:
+    ipaddress.ip_address(value)
+except ValueError:
+    if "." in value and re.fullmatch(r"[A-Za-z0-9.-]+", value):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 prompt_default() {
   local label="$1"
   local current="$2"
@@ -101,10 +119,15 @@ main() {
   echo "Detected public IP: $public_ip"
   echo "Detected NIC: $server_nic"
 
-  local server_name server_host nic install_wg install_bot install_warp cdn_domain
+  local server_name server_host nic install_wg install_bot install_warp cdn_domain proxy_tls_domain
   server_name="$(prompt_default "Server name" "MyVPN")"
   server_host="$(prompt_default "Share host/IP" "$public_ip")"
   nic="$(prompt_default "Network interface" "$server_nic")"
+  proxy_tls_domain=""
+  if looks_like_hostname "$server_host"; then
+    proxy_tls_domain="$server_host"
+  fi
+  proxy_tls_domain="$(prompt_default "HTTPS proxy domain (leave blank to disable)" "$proxy_tls_domain")"
   cdn_domain="$(prompt_default "Cloudflare domain for CDN mode (leave blank to disable)" "")"
   install_wg="N"
   install_bot="N"
@@ -112,7 +135,7 @@ main() {
 
   echo
   echo "Port customization (Enter to keep defaults):"
-  local port_reality port_reality_alt port_xhttp port_ws port_grpc port_vmess port_hy2 port_ss2022 port_tuic port_http port_socks5 port_sub port_mtproto port_wg
+  local port_reality port_reality_alt port_xhttp port_ws port_grpc port_vmess port_hy2 port_ss2022 port_tuic port_http port_socks5 port_https port_sub port_mtproto port_wg
   port_reality="$(prompt_default "  VLESS Reality port" "443")"
   port_reality_alt="$(prompt_default "  VLESS Reality alt port" "$(random_high_port)")"
   port_xhttp="$(prompt_default "  VLESS XHTTP port" "8443")"
@@ -124,6 +147,7 @@ main() {
   port_tuic="$(prompt_default "  TUIC v5 UDP port" "8448")"
   port_http="$(prompt_default "  HTTP proxy port" "8080")"
   port_socks5="$(prompt_default "  SOCKS5 proxy port" "1080")"
+  port_https="$(prompt_default "  HTTPS proxy port" "8449")"
   port_sub="$(prompt_default "  Subscription server port" "8000")"
   port_mtproto="$(prompt_default "  MTProto port" "8447")"
   port_wg="$(prompt_default "  WireGuard port" "51820")"
@@ -160,6 +184,17 @@ main() {
   write_env_value TUIC_CONGESTION_CONTROL "bbr"
   write_env_value HTTP_PROXY_PORT "$port_http"
   write_env_value SOCKS5_PROXY_PORT "$port_socks5"
+  write_env_value HTTPS_PROXY_PORT "$port_https"
+  write_env_value PROXY_TLS_DOMAIN "$proxy_tls_domain"
+  write_env_value PROXY_TLS_READY "0"
+  if [[ -n "$proxy_tls_domain" ]]; then
+    write_env_value PROXY_TLS_CERT_PATH "/etc/letsencrypt/live/${proxy_tls_domain}/fullchain.pem"
+    write_env_value PROXY_TLS_KEY_PATH "/etc/letsencrypt/live/${proxy_tls_domain}/privkey.pem"
+  else
+    write_env_value PROXY_TLS_CERT_PATH ""
+    write_env_value PROXY_TLS_KEY_PATH ""
+  fi
+  write_env_value PROXY_TLS_CONFIG_PATH "/etc/stunnel/https-proxy.conf"
   write_env_value SUB_PORT "$port_sub"
   write_env_value MTPROTO_PORT "$port_mtproto"
   write_env_value WG_SERVER_PORT "$port_wg"
@@ -184,6 +219,7 @@ main() {
   if [[ "$install_wg" == "Y" ]]; then echo "[x] WireGuard plain"; else echo "[ ] WireGuard plain"; fi
   if [[ "$install_warp" == "Y" ]]; then echo "[x] Cloudflare WARP egress"; else echo "[ ] Cloudflare WARP egress"; fi
   echo "[x] HTTP + SOCKS5 proxy (3proxy)"
+  if [[ -n "$proxy_tls_domain" ]]; then echo "[x] HTTPS proxy over TLS (${proxy_tls_domain}:${port_https})"; else echo "[ ] HTTPS proxy over TLS"; fi
   echo "[x] MTProto (mtg)"
   echo "[x] Subscription server"
   if [[ "$install_bot" == "Y" ]]; then echo "[x] Telegram bot"; else echo "[ ] Telegram bot"; fi

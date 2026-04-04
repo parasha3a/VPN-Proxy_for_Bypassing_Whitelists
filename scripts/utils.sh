@@ -72,6 +72,12 @@ XRAY_WARP_PORT=40000
 XRAY_WARP_DOMAINS=gemini.google.com,aistudio.google.com,generativelanguage.googleapis.com
 HTTP_PROXY_PORT=8080
 SOCKS5_PROXY_PORT=1080
+HTTPS_PROXY_PORT=8449
+PROXY_TLS_DOMAIN=
+PROXY_TLS_READY=0
+PROXY_TLS_CERT_PATH=
+PROXY_TLS_KEY_PATH=
+PROXY_TLS_CONFIG_PATH=/etc/stunnel/https-proxy.conf
 MTPROTO_PORT=8447
 MTPROTO_SECRET=CHANGE_ME
 MTPROTO_DOMAIN=www.cloudflare.com
@@ -152,6 +158,7 @@ print_status() {
   print_single_service tuic.service
   print_single_service vpn-sub.service
   print_single_service 3proxy.service
+  print_single_service proxy-tls.service
   print_single_service mtg.service
   print_single_service wg-quick@wg0.service
   print_single_service awg-quick@awg0.service
@@ -337,7 +344,7 @@ uninstall_stack() {
   fi
 
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl disable --now vpn-bot.service vpn-sub.service mtg.service 3proxy.service xray.service hysteria.service ss2022.service tuic.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true
+    systemctl disable --now vpn-bot.service vpn-sub.service mtg.service proxy-tls.service 3proxy.service xray.service hysteria.service ss2022.service tuic.service wg-quick@wg0.service awg-quick@awg0.service 2>/dev/null || true
   fi
 
   rm -f /usr/local/bin/vpn
@@ -346,6 +353,7 @@ uninstall_stack() {
   rm -f /etc/systemd/system/hysteria.service
   rm -f /etc/systemd/system/ss2022.service
   rm -f /etc/systemd/system/tuic.service
+  rm -f /etc/systemd/system/proxy-tls.service
   systemctl daemon-reload 2>/dev/null || true
 
   echo "Stack services removed. Project files remain in: $root"

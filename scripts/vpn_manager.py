@@ -35,6 +35,7 @@ SERVICES = [
     ("warp-svc.service", "Cloudflare WARP"),
     ("vpn-sub.service", "Subscription"),
     ("3proxy.service", "3proxy"),
+    ("proxy-tls.service", "HTTPS proxy"),
     ("mtg.service", "MTProto"),
     ("wg-quick@wg0.service", "WireGuard"),
     ("awg-quick@awg0.service", "AmneziaWG"),
@@ -1210,10 +1211,20 @@ def build_awg_client(user: dict[str, Any], env: dict[str, str]) -> str:
 
 def build_proxy_txt(user: dict[str, Any], env: dict[str, str]) -> str:
     server = env.get("SERVER_HOST") or env.get("SERVER_IP") or "127.0.0.1"
-    return (
-        f"HTTP:   http://{user['proxy_username']}:{user['proxy_password']}@{server}:{env['HTTP_PROXY_PORT']}\n"
-        f"SOCKS5: socks5://{user['proxy_username']}:{user['proxy_password']}@{server}:{env['SOCKS5_PROXY_PORT']}\n"
+    lines = []
+    proxy_tls_domain = env.get("PROXY_TLS_DOMAIN", "")
+    https_proxy_port = env.get("HTTPS_PROXY_PORT", "")
+    if env.get("PROXY_TLS_READY") == "1" and proxy_tls_domain and https_proxy_port:
+        lines.append(
+            f"HTTPS:  https://{user['proxy_username']}:{user['proxy_password']}@{proxy_tls_domain}:{https_proxy_port}"
+        )
+    lines.extend(
+        [
+            f"HTTP:   http://{user['proxy_username']}:{user['proxy_password']}@{server}:{env['HTTP_PROXY_PORT']}",
+            f"SOCKS5: socks5://{user['proxy_username']}:{user['proxy_password']}@{server}:{env['SOCKS5_PROXY_PORT']}",
+        ]
     )
+    return "\n".join(lines) + "\n"
 
 
 def build_mtproto_txt(env: dict[str, str]) -> str:
@@ -1346,7 +1357,7 @@ def build_readme(user: dict[str, Any], env: dict[str, str], uris: list[str]) -> 
         "SS2022-compatible apps: import the ss:// URI from uris.txt or copy ss2022.txt",
         "TUIC-capable apps: import the tuic:// URI from uris.txt or copy tuic.txt",
         "Telegram: open a link from mtproto.txt",
-        "HTTP/SOCKS5 proxy: use proxy.txt",
+        "HTTP/SOCKS5 proxy: use proxy.txt and prefer the HTTPS endpoint when it is present",
         "",
         "[ALL SHAREABLE URIS]",
         *uris,
@@ -1729,6 +1740,12 @@ def render_services() -> None:
     (GENERATED_DIR / "3proxy.cfg").write_text(render_3proxy(users, env))
 
 
+def render_user_bundles() -> None:
+    env = load_env()
+    for name, user in sorted(load_db()["users"].items()):
+        write_user_bundle(user, env)
+
+
 def user_summary(user: dict[str, Any], env: dict[str, str], usage: dict[str, Any] | None = None) -> dict[str, Any]:
     usage_item = usage or {}
     total_bytes = int_or_zero(usage_item.get("total_bytes"))
@@ -1961,6 +1978,11 @@ def status_payload() -> dict[str, Any]:
         "tuic_udp": env["TUIC_PORT"],
         "http_proxy": env["HTTP_PROXY_PORT"],
         "socks5_proxy": env["SOCKS5_PROXY_PORT"],
+        "https_proxy_tls": (
+            env.get("HTTPS_PROXY_PORT", "")
+            if env.get("PROXY_TLS_READY") == "1" and env.get("PROXY_TLS_DOMAIN")
+            else ""
+        ),
         "subscription": env["SUB_PORT"],
         "mtproto": env["MTPROTO_PORT"],
         "wireguard": env["WG_SERVER_PORT"],
@@ -1981,6 +2003,7 @@ def print_status_summary(*, legacy: bool = False) -> None:
     data = status_payload()
     if legacy:
         ports = data["ports"]
+        https_proxy = f"https_proxy={ports['https_proxy_tls']} " if ports["https_proxy_tls"] else ""
         print(f"Users: {data['users']}")
         print(
             "Ports: "
@@ -1996,6 +2019,7 @@ def print_status_summary(*, legacy: bool = False) -> None:
             f"tuic={ports['tuic_udp']}/udp "
             f"http={ports['http_proxy']} "
             f"socks5={ports['socks5_proxy']} "
+            f"{https_proxy}"
             f"sub={ports['subscription']} "
             f"mtproto={ports['mtproto']} "
             f"wg={ports['wireguard']}"
@@ -2160,7 +2184,15 @@ def install_stack() -> None:
 
 
 def update_stack() -> None:
-    for script in ("install_xray.sh", "install_hysteria.sh", "install_ss2022.sh", "install_tuic.sh", "install_mtproto.sh"):
+    for script in (
+        "install_xray.sh",
+        "install_hysteria.sh",
+        "install_ss2022.sh",
+        "install_tuic.sh",
+        "install_proxy.sh",
+        "install_mtproto.sh",
+        "install_security_hardening.sh",
+    ):
         run_command("bash", str(ROOT / "scripts" / script), "--upgrade", capture_output=False)
 
 
@@ -2180,6 +2212,7 @@ def uninstall_stack(*, yes: bool) -> None:
             "vpn-bot.service",
             "vpn-sub.service",
             "mtg.service",
+            "proxy-tls.service",
             "3proxy.service",
             "xray.service",
             "hysteria.service",
@@ -2196,6 +2229,7 @@ def uninstall_stack(*, yes: bool) -> None:
         "/etc/systemd/system/hysteria.service",
         "/etc/systemd/system/ss2022.service",
         "/etc/systemd/system/tuic.service",
+        "/etc/systemd/system/proxy-tls.service",
         "/etc/systemd/system/3proxy.service",
     ):
         try:
@@ -2392,6 +2426,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("panel")
     sub.add_parser("update")
     sub.add_parser("render-services")
+    sub.add_parser("render-users")
 
     p_completion = sub.add_parser("completion")
     p_completion.add_argument("shell", nargs="?", choices=("bash", "zsh"))
@@ -2487,6 +2522,9 @@ def main() -> None:
         return
     if args.command == "render-services":
         render_services()
+        return
+    if args.command == "render-users":
+        render_user_bundles()
         return
     if args.command == "completion":
         print(completion_script(detect_completion_shell(args.shell)))

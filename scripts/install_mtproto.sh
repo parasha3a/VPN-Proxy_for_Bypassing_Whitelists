@@ -27,6 +27,24 @@ path.write_text("\n".join(lines) + "\n")
 PY
 }
 
+looks_like_hostname() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import re
+import sys
+
+value = sys.argv[1].strip()
+if not value or re.search(r"\s", value):
+    raise SystemExit(1)
+try:
+    ipaddress.ip_address(value)
+except ValueError:
+    if "." in value and re.fullmatch(r"[A-Za-z0-9.-]+", value):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 main() {
   require_root
   ensure_project_layout "$ROOT_DIR"
@@ -47,6 +65,10 @@ main() {
   bin_path="$(find "$tmpdir" -type f -name mtg | head -n 1)"
   install -m 0755 "$bin_path" /usr/local/bin/mtg
 
+  if [[ -n "${SERVER_HOST:-}" && ( -z "${MTPROTO_DOMAIN:-}" || "${MTPROTO_DOMAIN:-}" == "www.cloudflare.com" ) ]] && looks_like_hostname "$SERVER_HOST"; then
+    write_env_value MTPROTO_DOMAIN "$SERVER_HOST"
+  fi
+  load_env_file "$ROOT_DIR/data/server.env"
   if [[ "${MTPROTO_SECRET:-CHANGE_ME}" == "CHANGE_ME" ]]; then
     write_env_value MTPROTO_SECRET "$(mtg generate-secret "${MTPROTO_DOMAIN:-www.cloudflare.com}")"
   fi
@@ -61,6 +83,7 @@ bind-to = "0.0.0.0:${MTPROTO_PORT}"
 prefer-ip = "${MTPROTO_PREFER_IP}"
 EOF
   chmod 600 /etc/mtg.toml
+  python3 "$ROOT_DIR/scripts/vpn_manager.py" render-users
 
   cat >/etc/systemd/system/mtg.service <<'EOF'
 [Unit]

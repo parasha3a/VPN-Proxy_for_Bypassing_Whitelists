@@ -47,6 +47,9 @@ def sample_env() -> dict[str, str]:
         "HY2_KEY_PATH": "/etc/hysteria/server.key",
         "HTTP_PROXY_PORT": "8080",
         "SOCKS5_PROXY_PORT": "1080",
+        "HTTPS_PROXY_PORT": "8449",
+        "PROXY_TLS_DOMAIN": "",
+        "PROXY_TLS_READY": "0",
         "MTPROTO_PORT": "8447",
         "MTPROTO_SECRET": "SECRET",
         "SS2022_PORT": "8388",
@@ -190,6 +193,15 @@ class VpnManagerTests(unittest.TestCase):
         self.assertIn("tuic.txt -> sing-box", readme)
         self.assertIn("proxy.txt -> HTTP/SOCKS5 apps", readme)
         self.assertIn("mtproto.txt -> Telegram", readme)
+
+    def test_build_proxy_txt_adds_https_endpoint_when_tls_domain_configured(self) -> None:
+        env = sample_env() | {"PROXY_TLS_DOMAIN": "proxy.example.com", "HTTPS_PROXY_PORT": "9443", "PROXY_TLS_READY": "1"}
+
+        proxy_txt = vpn_manager.build_proxy_txt(sample_user(), env)
+
+        self.assertIn("HTTPS:  https://alice:proxy-pass@proxy.example.com:9443", proxy_txt)
+        self.assertIn("HTTP:   http://alice:proxy-pass@vpn.example.com:8080", proxy_txt)
+        self.assertIn("SOCKS5: socks5://alice:proxy-pass@vpn.example.com:1080", proxy_txt)
 
     def test_legacy_dispatch_maps_old_commands(self) -> None:
         self.assertEqual(vpn_manager.legacy_dispatch(["user-add", "alice"]), ["user", "add", "alice"])

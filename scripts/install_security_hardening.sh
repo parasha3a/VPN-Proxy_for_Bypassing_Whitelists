@@ -120,6 +120,9 @@ configure_firewall() {
     "${SUB_PORT}"
     "${MTPROTO_PORT}"
   )
+  if [[ -n "${PROXY_TLS_DOMAIN:-}" && -n "${HTTPS_PROXY_PORT:-}" ]]; then
+    tcp_ports+=("${HTTPS_PROXY_PORT}")
+  fi
   if [[ -n "${XRAY_CDN_DOMAIN:-}" ]]; then
     tcp_ports+=("443")
   fi
@@ -246,6 +249,26 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 EOF
 
+  if systemctl list-unit-files proxy-tls.service >/dev/null 2>&1; then
+    write_service_override "proxy-tls.service" <<'EOF'
+[Service]
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+EOF
+  fi
+
   write_service_override "mtg.service" <<'EOF'
 [Service]
 UMask=0077
@@ -306,7 +329,7 @@ EOF
   fi
 
   systemctl daemon-reload
-  systemctl restart xray.service hysteria.service ss2022.service tuic.service 3proxy.service mtg.service vpn-sub.service >/dev/null 2>&1 || true
+  systemctl restart xray.service hysteria.service ss2022.service tuic.service 3proxy.service proxy-tls.service mtg.service vpn-sub.service >/dev/null 2>&1 || true
   systemctl restart vpn-bot.service >/dev/null 2>&1 || true
 }
 
